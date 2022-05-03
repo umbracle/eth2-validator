@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/mitchellh/cli"
-	"github.com/umbracle/beacon/internal/cmd"
+	"github.com/umbracle/eth2-validator/internal/cmd"
 )
 
 func main() {

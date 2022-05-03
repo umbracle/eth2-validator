@@ -1,7 +1,7 @@
 package server
 
 import (
-	"github.com/umbracle/beacon/internal/beacon"
+	"github.com/umbracle/eth2-validator/internal/beacon"
 )
 
 // Config is the parametrizable configuration of the
