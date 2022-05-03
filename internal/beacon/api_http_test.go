@@ -9,6 +9,8 @@ import (
 )
 
 func TestApi_Genesis(t *testing.T) {
+	t.Skip()
+
 	h := NewHttpAPI("http://172.17.0.3:5050")
 
 	genesis, err := h.Genesis(context.Background())
@@ -18,6 +20,8 @@ func TestApi_Genesis(t *testing.T) {
 }
 
 func TestApi_Events(t *testing.T) {
+	t.Skip()
+
 	h := NewHttpAPI("http://172.17.0.3:5050")
 
 	h.Events(context.Background(), []string{"head"}, func(obj interface{}) {
