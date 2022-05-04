@@ -2,9 +2,7 @@ package testutil
 
 import (
 	"encoding/json"
-	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/go-web3/keystore"
@@ -17,7 +15,7 @@ type PrysmBeacon struct {
 }
 
 // NewPrysmBeacon creates a new prysm server
-func NewPrysmBeacon(t *testing.T, e *Eth1Server) *PrysmBeacon {
+func NewPrysmBeacon(e *Eth1Server) (*PrysmBeacon, error) {
 	testConfig := &Eth2Spec{
 		DepositContract: e.deposit.String(),
 	}
@@ -56,12 +54,15 @@ func NewPrysmBeacon(t *testing.T, e *Eth1Server) *PrysmBeacon {
 		WithFile("/data/config.yaml", testConfig),
 	}
 
-	node := newNode(t, opts...)
+	node, err := newNode(opts...)
+	if err != nil {
+		return nil, err
+	}
 	srv := &PrysmBeacon{
 		node:   node,
 		config: testConfig.GetChainConfig(),
 	}
-	return srv
+	return srv, nil
 }
 
 func (b *PrysmBeacon) IP() string {
@@ -78,12 +79,14 @@ type PrysmValidator struct {
 
 const defWalletPassword = "qwerty"
 
-func NewPrysmValidator(t *testing.T, account *Account, spec *Eth2Spec, beacon Node) *PrysmValidator {
+func NewPrysmValidator(account *Account, spec *Eth2Spec, beacon Node) (*PrysmValidator, error) {
 	store := &accountStore{}
 	store.AddKey(account.Bls)
 
 	keystore, err := store.ToKeystore(defWalletPassword)
-	assert.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
 
 	cmd := []string{
 		"--verbosity", "debug",
@@ -104,8 +107,11 @@ func NewPrysmValidator(t *testing.T, account *Account, spec *Eth2Spec, beacon No
 		WithFile("/data/wallet-password.txt", defWalletPassword),
 	}
 
-	node := newNode(t, opts...)
-	return &PrysmValidator{node: node}
+	node, err := newNode(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &PrysmValidator{node: node}, nil
 }
 
 // accountStore is the format used by all managers??

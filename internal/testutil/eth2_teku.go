@@ -2,9 +2,7 @@ package testutil
 
 import (
 	"fmt"
-	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
 )
@@ -16,7 +14,7 @@ type TekuBeacon struct {
 }
 
 // NewTekuBeacon creates a new teku server
-func NewTekuBeacon(t *testing.T, e *Eth1Server) *TekuBeacon {
+func NewTekuBeacon(e *Eth1Server) (*TekuBeacon, error) {
 	testConfig := &Eth2Spec{
 		DepositContract: e.deposit.String(),
 	}
@@ -45,12 +43,15 @@ func NewTekuBeacon(t *testing.T, e *Eth1Server) *TekuBeacon {
 		WithFile("/data/config.yaml", testConfig),
 	}
 
-	node := newNode(t, opts...)
+	node, err := newNode(opts...)
+	if err != nil {
+		return nil, err
+	}
 	srv := &TekuBeacon{
 		node:   node,
 		config: testConfig.GetChainConfig(),
 	}
-	return srv
+	return srv, nil
 }
 
 func (b *TekuBeacon) IP() string {
@@ -69,9 +70,11 @@ type TekuValidator struct {
 	node *node
 }
 
-func NewTekuValidator(t *testing.T, account *Account, spec *Eth2Spec, beacon Node) *TekuValidator {
+func NewTekuValidator(account *Account, spec *Eth2Spec, beacon Node) (*TekuValidator, error) {
 	keystore, err := bls.ToKeystore(account.Bls, defWalletPassword)
-	assert.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
 
 	cmd := []string{
 		"vc",
@@ -96,6 +99,9 @@ func NewTekuValidator(t *testing.T, account *Account, spec *Eth2Spec, beacon Nod
 		WithFile("/data/wallet/wallet.txt", defWalletPassword),
 	}
 
-	node := newNode(t, opts...)
-	return &TekuValidator{node: node}
+	node, err := newNode(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return &TekuValidator{node: node}, nil
 }

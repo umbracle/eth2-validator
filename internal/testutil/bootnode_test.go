@@ -7,6 +7,7 @@ import (
 )
 
 func TestBootnode(t *testing.T) {
-	b := NewBootnode(t)
+	b, err := NewBootnode()
+	assert.NoError(t, err)
 	assert.NotEmpty(t, b.Enr)
 }

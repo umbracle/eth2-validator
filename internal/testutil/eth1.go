@@ -3,7 +3,6 @@ package testutil
 import (
 	"fmt"
 	"net/http"
-	"testing"
 	"time"
 
 	"github.com/umbracle/eth2-validator/internal/beacon"
@@ -90,7 +89,7 @@ type Eth1Server struct {
 }
 
 // NewEth1Server creates a new eth1 server with go-ethereum
-func NewEth1Server(t *testing.T) *Eth1Server {
+func NewEth1Server() (*Eth1Server, error) {
 	cmd := []string{
 		"--dev",
 		"--dev.period", "1",
@@ -106,21 +105,24 @@ func NewEth1Server(t *testing.T) *Eth1Server {
 		}),
 	}
 
-	node := newNode(t, opts...)
+	node, err := newNode(opts...)
+	if err != nil {
+		return nil, err
+	}
 	server := &Eth1Server{
 		node: node,
 	}
 
 	provider, err := jsonrpc.NewClient(server.http())
 	if err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
 	server.client = provider
 
 	if err := server.deployDeposit(); err != nil {
-		t.Fatal(err)
+		return nil, err
 	}
-	return server
+	return server, nil
 }
 
 func (e *Eth1Server) http() string {
@@ -206,6 +208,10 @@ func (e *Eth1Server) deployDeposit() error {
 	}
 	e.deposit = txn.Receipt().ContractAddress
 	return nil
+}
+
+func (e *Eth1Server) Deposit() web3.Address {
+	return e.deposit
 }
 
 func (e *Eth1Server) GetDepositContract() *deposit.Deposit {
