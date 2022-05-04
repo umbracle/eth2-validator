@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 )
 
@@ -22,11 +21,11 @@ func TestEth2_Teku_SingleNode(t *testing.T) {
 	assert.NoError(t, err)
 
 	b := NewTekuBeacon(t, eth1)
-	NewTekuValidator(t, account, spec, b)
+	v := NewTekuValidator(t, account, spec, b)
 
 	api := beacon.NewHttpAPI(fmt.Sprintf("http://%s:5050", b.IP()))
 
-	require.Eventually(t, func() bool {
+	assert.Eventually(t, func() bool {
 		syncing, err := api.Syncing()
 		if err != nil {
 			return false
@@ -39,4 +38,10 @@ func TestEth2_Teku_SingleNode(t *testing.T) {
 		}
 		return true
 	}, 2*time.Minute, 10*time.Second)
+
+	fmt.Println("-- b --")
+	fmt.Println(b.node.GetLogs())
+
+	fmt.Println("-- v --")
+	fmt.Println(v.node.GetLogs())
 }
