@@ -39,7 +39,7 @@ func NewTekuBeacon(t *testing.T, e *Eth1Server) *TekuBeacon {
 	}
 	opts := []nodeOption{
 		WithName("teku-beacon"),
-		WithContainer("consensys/teku", "latest"),
+		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/config.yaml", testConfig),
@@ -88,7 +88,7 @@ func NewTekuValidator(t *testing.T, account *Account, spec *Eth2Spec, beacon Nod
 	}
 	opts := []nodeOption{
 		WithName("teku-validator"),
-		WithContainer("consensys/teku", "latest"),
+		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/config.yaml", spec),

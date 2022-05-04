@@ -28,6 +28,7 @@ func NewLighthouseBeacon(t *testing.T, e *Eth1Server) *LighthouseBeacon {
 		"--http-port", eth2ApiPort,
 		"--eth1-endpoints", e.http(),
 		"--testnet-dir", "/data",
+		"--http-allow-sync-stalled",
 	}
 	opts := []nodeOption{
 		WithName("lighthouse-beacon"),

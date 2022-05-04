@@ -1,12 +1,16 @@
 package testutil
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/umbracle/eth2-validator/internal/beacon"
 )
 
-func TestEth2_Prysm_Simple(t *testing.T) {
+func TestEth2_Prysm_SingleNode(t *testing.T) {
 	eth1 := NewEth1Server(t)
 	account := NewAccount()
 
@@ -17,6 +21,22 @@ func TestEth2_Prysm_Simple(t *testing.T) {
 	err := eth1.MakeDeposit(account, spec.GetChainConfig())
 	assert.NoError(t, err)
 
-	beacon := NewPrysmBeacon(t, eth1)
-	NewPrysmValidator(t, account, spec, beacon)
+	b := NewPrysmBeacon(t, eth1)
+	NewPrysmValidator(t, account, spec, b)
+
+	api := beacon.NewHttpAPI(fmt.Sprintf("http://%s:5050", b.IP()))
+
+	require.Eventually(t, func() bool {
+		syncing, err := api.Syncing()
+		if err != nil {
+			return false
+		}
+		if syncing.IsSyncing {
+			return false
+		}
+		if syncing.HeadSlot < 2 {
+			return false
+		}
+		return true
+	}, 2*time.Minute, 10*time.Second)
 }
