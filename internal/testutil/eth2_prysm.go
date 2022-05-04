@@ -37,6 +37,7 @@ func NewPrysmBeacon(t *testing.T, e *Eth1Server) *PrysmBeacon {
 		"--no-discovery",
 		// host public
 		"--grpc-gateway-host", "0.0.0.0",
+		"--grpc-gateway-port", eth2ApiPort,
 		"--rpc-host", "0.0.0.0",
 		// config
 		"--chain-config-file", "/data/config.yaml",

@@ -2,7 +2,7 @@
 # Note: the intention of this file (for now) is to illustrate what a mainnet configuration could look like.
 # Some of these constants may still change before the launch of Phase 0.
 
-CONFIG_NAME: "mainnet"
+CONFIG_NAME: "xxx"
 PRESET_BASE: "mainnet"
 
 # Misc
@@ -90,6 +90,15 @@ BLS_WITHDRAWAL_PREFIX: 0x00
 #  - Temporarily set to max uint64 value: 2**64 - 1
 ALTAIR_FORK_VERSION: 0x01000064
 ALTAIR_FORK_EPOCH: 18446744073709551615
+
+BELLATRIX_FORK_VERSION: 0x02000000
+BELLATRIX_FORK_EPOCH: 18446744073709551615
+
+# TBD, 2**256-2**10 is a placeholder
+TERMINAL_TOTAL_DIFFICULTY: 115792089237316195423570985008687907853269984665640564039457584007913129638912
+# By default, don't use these params
+TERMINAL_BLOCK_HASH: 0x0000000000000000000000000000000000000000000000000000000000000000
+TERMINAL_BLOCK_HASH_ACTIVATION_EPOCH: 18446744073709551615
 
 # Time parameters
 # ---------------------------------------------------------------
