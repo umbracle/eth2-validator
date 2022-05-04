@@ -176,9 +176,9 @@ func newNode(t *testing.T, opts ...nodeOption) *node {
 	}
 
 	t.Cleanup(func() {
-		//if err := pool.Purge(resource); err != nil {
-		//	t.Fatalf("Could not purge node: %s", err)
-		//}
+		if err := pool.Purge(resource); err != nil {
+			t.Fatalf("Could not purge node: %s", err)
+		}
 	})
 	return n
 }
