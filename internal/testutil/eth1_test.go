@@ -8,11 +8,13 @@ import (
 )
 
 func TestEth1(t *testing.T) {
-	eth1 := NewEth1Server(t)
+	eth1, err := NewEth1Server()
+	assert.NoError(t, err)
+
 	account := NewAccount()
 
 	chainConfig := (&Eth2Spec{}).GetChainConfig()
-	err := eth1.MakeDeposit(account, chainConfig)
+	err = eth1.MakeDeposit(account, chainConfig)
 	assert.NoError(t, err)
 
 	contract := eth1.GetDepositContract()

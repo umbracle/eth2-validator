@@ -3,9 +3,7 @@ package testutil
 import (
 	"encoding/hex"
 	"fmt"
-	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
 )
@@ -17,7 +15,7 @@ type LighthouseBeacon struct {
 }
 
 // NewLighthouseBeacon creates a new prysm server
-func NewLighthouseBeacon(t *testing.T, e *Eth1Server) *LighthouseBeacon {
+func NewLighthouseBeacon(e *Eth1Server) (*LighthouseBeacon, error) {
 	testConfig := &Eth2Spec{
 		DepositContract: e.deposit.String(),
 	}
@@ -39,12 +37,15 @@ func NewLighthouseBeacon(t *testing.T, e *Eth1Server) *LighthouseBeacon {
 		WithFile("/data/deploy_block.txt", "0"),
 	}
 
-	node := newNode(t, opts...)
+	node, err := newNode(opts...)
+	if err != nil {
+		return nil, err
+	}
 	srv := &LighthouseBeacon{
 		node:   node,
 		config: testConfig.GetChainConfig(),
 	}
-	return srv
+	return srv, nil
 }
 
 func (b *LighthouseBeacon) IP() string {
@@ -59,12 +60,14 @@ type LighthouseValidator struct {
 	node *node
 }
 
-func NewLighthouseValidator(t *testing.T, account *Account, spec *Eth2Spec, beacon Node) *LighthouseValidator {
+func NewLighthouseValidator(account *Account, spec *Eth2Spec, beacon Node) (*LighthouseValidator, error) {
 	pub := account.Bls.PubKey()
 	pubStr := "0x" + hex.EncodeToString(pub[:])
 
 	keystore, err := bls.ToKeystore(account.Bls, defWalletPassword)
-	assert.NoError(t, err)
+	if err != nil {
+		return nil, err
+	}
 
 	cmd := []string{
 		"lighthouse", "vc",
@@ -85,10 +88,12 @@ func NewLighthouseValidator(t *testing.T, account *Account, spec *Eth2Spec, beac
 		WithFile("/data/node/secrets/"+pubStr, defWalletPassword),
 	}
 
-	node := newNode(t, opts...)
-
+	node, err := newNode(opts...)
+	if err != nil {
+		return nil, err
+	}
 	srv := &LighthouseValidator{
 		node: node,
 	}
-	return srv
+	return srv, nil
 }

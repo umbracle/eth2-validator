@@ -11,18 +11,22 @@ import (
 )
 
 func TestEth2_Lighthouse_SingleNode(t *testing.T) {
-	eth1 := NewEth1Server(t)
+	eth1, err := NewEth1Server()
+	assert.NoError(t, err)
+
 	account := NewAccount()
 
 	spec := &Eth2Spec{
 		DepositContract: eth1.deposit.String(),
 	}
 
-	err := eth1.MakeDeposit(account, spec.GetChainConfig())
+	err = eth1.MakeDeposit(account, spec.GetChainConfig())
 	assert.NoError(t, err)
 
-	b := NewLighthouseBeacon(t, eth1)
-	NewLighthouseValidator(t, account, spec, b)
+	b, err := NewLighthouseBeacon(eth1)
+	assert.NoError(t, err)
+
+	NewLighthouseValidator(account, spec, b)
 
 	api := beacon.NewHttpAPI(fmt.Sprintf("http://%s:5050", b.IP()))
 

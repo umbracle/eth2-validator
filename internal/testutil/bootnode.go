@@ -3,7 +3,6 @@ package testutil
 import (
 	"fmt"
 	"regexp"
-	"testing"
 )
 
 var (
@@ -15,7 +14,7 @@ type Bootnode struct {
 	node *node
 }
 
-func NewBootnode(t *testing.T) *Bootnode {
+func NewBootnode() (*Bootnode, error) {
 	decodeEnr := func(node *node) (string, error) {
 		logs, err := node.GetLogs()
 		if err != nil {
@@ -44,10 +43,13 @@ func NewBootnode(t *testing.T) *Bootnode {
 		}),
 	}
 
-	node := newNode(t, opts...)
+	node, err := newNode(opts...)
+	if err != nil {
+		return nil, err
+	}
 	b := &Bootnode{
 		Enr:  nodeENR,
 		node: node,
 	}
-	return b
+	return b, nil
 }

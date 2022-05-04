@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"bytes"
+	"embed"
 	"encoding/hex"
 	"fmt"
 	"html/template"
@@ -12,6 +13,11 @@ import (
 	"github.com/mitchellh/mapstructure"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"gopkg.in/yaml.v2"
+)
+
+var (
+	//go:embed fixtures
+	res embed.FS
 )
 
 // Eth2Spec is the config of the Eth2.0 node
@@ -63,7 +69,7 @@ func (e *Eth2Spec) buildConfig() []byte {
 		e.NetworkID = 1337
 	}
 
-	tmpl, err := template.New("config.yaml.tmpl").ParseFiles("./fixtures/config.yaml.tmpl")
+	tmpl, err := template.ParseFS(res, "fixtures/config.yaml.tmpl")
 	if err != nil {
 		panic(fmt.Sprintf("BUG: Failed to load eth2 config template: %v", err))
 	}

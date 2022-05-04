@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"encoding"
 	"encoding/json"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
-	"testing"
 
 	"github.com/ory/dockertest/v3"
 	"github.com/ory/dockertest/v3/docker"
@@ -88,7 +88,7 @@ func WithFile(path string, obj interface{}) nodeOption {
 	}
 }
 
-func newNode(t *testing.T, opts ...nodeOption) *node {
+func newNode(opts ...nodeOption) (*node, error) {
 	nOpts := &nodeOpts{
 		Mount: []string{},
 		Files: map[string]string{},
@@ -100,7 +100,7 @@ func newNode(t *testing.T, opts ...nodeOption) *node {
 
 	pool, err := dockertest.NewPool("")
 	if err != nil {
-		t.Fatalf("Could not connect to docker: %s", err)
+		return nil, fmt.Errorf("could not connect to docker: %s", err)
 	}
 
 	dockerOpts := &dockertest.RunOptions{
@@ -121,7 +121,7 @@ func newNode(t *testing.T, opts ...nodeOption) *node {
 	for _, mount := range nOpts.Mount {
 		tmpDir, err := ioutil.TempDir("/tmp", dirPrefix)
 		if err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 		mountMap[mount] = tmpDir
 		dockerOpts.Mounts = append(dockerOpts.Mounts, tmpDir+":"+mount)
@@ -141,7 +141,7 @@ func newNode(t *testing.T, opts ...nodeOption) *node {
 			}
 		}
 		if !found {
-			t.Fatalf("mount match for '%s' not found", path)
+			return nil, fmt.Errorf("mount match for '%s' not found", path)
 		}
 
 		relPath := strings.TrimPrefix(path, mount)
@@ -150,16 +150,16 @@ func newNode(t *testing.T, opts ...nodeOption) *node {
 		// create all the directory paths required
 		parentDir := filepath.Dir(localPath)
 		if err := os.MkdirAll(parentDir, 0700); err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 		if err := ioutil.WriteFile(localPath, []byte(content), 0644); err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 	}
 
 	resource, err := pool.RunWithOptions(dockerOpts)
 	if err != nil {
-		t.Fatalf("Could not start node: %s", err)
+		return nil, fmt.Errorf("could not start node: %s", err)
 	}
 
 	n := &node{
@@ -171,16 +171,11 @@ func newNode(t *testing.T, opts ...nodeOption) *node {
 		if err := pool.Retry(func() error {
 			return nOpts.Retry(n)
 		}); err != nil {
-			t.Fatal(err)
+			return nil, err
 		}
 	}
 
-	t.Cleanup(func() {
-		if err := pool.Purge(resource); err != nil {
-			t.Fatalf("Could not purge node: %s", err)
-		}
-	})
-	return n
+	return n, nil
 }
 
 func (n *node) Stop() {
