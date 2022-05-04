@@ -67,10 +67,11 @@ func TestSpecMinimal(t *testing.T) {
 			t.Fatalf("name %s not found", name)
 		}
 
-		t.Logf("Process %s %s", name, f)
-		for _, f := range walkPath(t, f) {
-			checkSSZEncoding(t, f, name, base)
-		}
+		t.Run(name, func(t *testing.T) {
+			for _, f := range walkPath(t, f) {
+				checkSSZEncoding(t, f, name, base)
+			}
+		})
 	}
 }
 
@@ -88,11 +89,12 @@ func TestSpecMainnet(t *testing.T) {
 			t.Fatalf("name %s not found", name)
 		}
 
-		t.Logf("Process %s %s", name, f)
-		files := readDir(t, filepath.Join(f, "ssz_random"))
-		for _, f := range files {
-			checkSSZEncoding(t, f, name, base)
-		}
+		t.Run(name, func(t *testing.T) {
+			files := readDir(t, filepath.Join(f, "ssz_random"))
+			for _, f := range files {
+				checkSSZEncoding(t, f, name, base)
+			}
+		})
 	}
 }
 
