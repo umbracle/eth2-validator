@@ -161,6 +161,7 @@ func (e *Eth1Server) fund(addr ethgo.Address) error {
 }
 
 func (e *Eth1Server) waitForReceipt(hash ethgo.Hash) (*ethgo.Receipt, error) {
+	fmt.Println("- wat for receipt", hash)
 	var count uint64
 	for {
 		receipt, err := e.client.Eth().GetTransactionReceipt(hash)
