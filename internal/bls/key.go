@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	uuid "github.com/hashicorp/go-uuid"
-	"github.com/umbracle/go-web3/keystore"
+	"github.com/umbracle/ethgo/keystore"
 )
 
 // Key is a reference to a key in the keymanager

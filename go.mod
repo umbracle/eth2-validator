@@ -17,7 +17,7 @@ require (
 	github.com/r3labs/sse/v2 v2.7.4
 	github.com/stretchr/testify v1.7.0
 	github.com/supranational/blst v0.3.3
-	github.com/umbracle/go-web3 v0.0.0-20220220230349-e1982f417a67
+	github.com/umbracle/ethgo v0.1.2
 	google.golang.org/grpc v1.42.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/yaml.v2 v2.3.0

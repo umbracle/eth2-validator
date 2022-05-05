@@ -8,9 +8,10 @@ import (
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/eth2-validator/internal/deposit"
-	"github.com/umbracle/go-web3"
-	"github.com/umbracle/go-web3/jsonrpc"
-	"github.com/umbracle/go-web3/wallet"
+	"github.com/umbracle/ethgo"
+	"github.com/umbracle/ethgo/contract"
+	"github.com/umbracle/ethgo/jsonrpc"
+	"github.com/umbracle/ethgo/wallet"
 )
 
 type NodeClient string
@@ -84,7 +85,7 @@ func NewAccount() *Account {
 // Eth1Server is an eth1x testutil server using go-ethereum
 type Eth1Server struct {
 	node    *node
-	deposit web3.Address
+	deposit ethgo.Address
 	client  *jsonrpc.Client
 }
 
@@ -134,20 +135,20 @@ const (
 	defaultGasLimit = 5242880    // 0x500000
 )
 
-func (e *Eth1Server) fund(addr web3.Address) error {
-	nonce, err := e.client.Eth().GetNonce(addr, web3.Latest)
+func (e *Eth1Server) fund(addr ethgo.Address) error {
+	nonce, err := e.client.Eth().GetNonce(addr, ethgo.Latest)
 	if err != nil {
 		return err
 	}
 
-	txn := &web3.Transaction{
+	txn := &ethgo.Transaction{
 		From:     e.Owner(),
 		To:       &addr,
 		Nonce:    nonce,
 		GasPrice: defaultGasPrice,
 		Gas:      defaultGasLimit,
 		// fund the account with enoung balance to validate and send the transaction
-		Value: web3.Ether(deposit.MinGweiAmount + 1),
+		Value: ethgo.Ether(deposit.MinGweiAmount + 1),
 	}
 	hash, err := e.client.Eth().SendTransaction(txn)
 	if err != nil {
@@ -159,7 +160,7 @@ func (e *Eth1Server) fund(addr web3.Address) error {
 	return nil
 }
 
-func (e *Eth1Server) waitForReceipt(hash web3.Hash) (*web3.Receipt, error) {
+func (e *Eth1Server) waitForReceipt(hash ethgo.Hash) (*ethgo.Receipt, error) {
 	var count uint64
 	for {
 		receipt, err := e.client.Eth().GetTransactionReceipt(hash)
@@ -186,7 +187,7 @@ func (e *Eth1Server) Provider() *jsonrpc.Client {
 }
 
 // Owner returns the account with balance on go-ethereum
-func (e *Eth1Server) Owner() web3.Address {
+func (e *Eth1Server) Owner() ethgo.Address {
 	owner, _ := e.Provider().Eth().Accounts()
 	return owner[0]
 }
@@ -199,23 +200,29 @@ func (e *Eth1Server) deployDeposit() error {
 	if err != nil {
 		return err
 	}
-	txn := deposit.DeployDeposit(provider, owner[0])
-	if err := txn.Do(); err != nil {
+
+	deployTxn := &ethgo.Transaction{
+		Input: deposit.DepositBin(),
+		From:  owner[0],
+	}
+	hash, err := provider.Eth().SendTransaction(deployTxn)
+	if err != nil {
 		return err
 	}
-	if err := txn.Wait(); err != nil {
+	receipt, err := e.waitForReceipt(hash)
+	if err != nil {
 		return err
 	}
-	e.deposit = txn.Receipt().ContractAddress
+	e.deposit = receipt.ContractAddress
 	return nil
 }
 
-func (e *Eth1Server) Deposit() web3.Address {
+func (e *Eth1Server) Deposit() ethgo.Address {
 	return e.deposit
 }
 
 func (e *Eth1Server) GetDepositContract() *deposit.Deposit {
-	return deposit.NewDeposit(e.deposit, e.Provider())
+	return deposit.NewDeposit(e.deposit, contract.WithJsonRPC(e.Provider().Eth()))
 }
 
 // MakeDeposit deposits the minimum required value to become a validator
@@ -227,21 +234,23 @@ func (e *Eth1Server) MakeDeposit(account *Account, config *beacon.ChainConfig) e
 		return err
 	}
 
-	data, err := deposit.Input(account.Bls, nil, web3.Gwei(depositAmount).Uint64(), config)
+	data, err := deposit.Input(account.Bls, nil, ethgo.Gwei(depositAmount).Uint64(), config)
 	if err != nil {
 		return err
 	}
 
-	depositC := e.GetDepositContract()
-	depositC.Contract().SetFrom(e.Owner())
+	depositC := deposit.NewDeposit(e.deposit, contract.WithSender(account.Ecdsa), contract.WithJsonRPC(e.Provider().Eth()))
 
-	txn := depositC.Deposit(data.Pubkey, data.WithdrawalCredentials, data.Signature, data.Root)
-	txn.SetValue(web3.Ether(depositAmount))
+	txn, err := depositC.Deposit(data.Pubkey, data.WithdrawalCredentials, data.Signature, data.Root)
+	if err != nil {
+		return err
+	}
+	txn.WithOpts(&contract.TxnOpts{Value: ethgo.Ether(depositAmount)})
 
 	if err := txn.Do(); err != nil {
 		return err
 	}
-	if err := txn.Wait(); err != nil {
+	if _, err := txn.Wait(); err != nil {
 		return err
 	}
 	return nil
