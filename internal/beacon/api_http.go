@@ -13,7 +13,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/r3labs/sse/v2"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
-	"github.com/umbracle/go-web3"
+	"github.com/umbracle/ethgo"
 )
 
 type HttpAPI struct {
@@ -92,9 +92,9 @@ func (h *HttpAPI) Syncing() (*Syncing, error) {
 }
 
 type Genesis struct {
-	Time uint64    `json:"genesis_time"`
-	Root web3.Hash `json:"genesis_validators_root"`
-	Fork string    `json:"genesis_fork_version"`
+	Time uint64     `json:"genesis_time"`
+	Root ethgo.Hash `json:"genesis_validators_root"`
+	Fork string     `json:"genesis_fork_version"`
 }
 
 func (h *HttpAPI) Genesis(ctx context.Context) (*Genesis, error) {

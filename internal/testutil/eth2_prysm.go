@@ -5,7 +5,7 @@ import (
 
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
-	"github.com/umbracle/go-web3/keystore"
+	"github.com/umbracle/ethgo/keystore"
 )
 
 // PrysmBeacon is a prysm test server

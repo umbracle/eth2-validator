@@ -7,9 +7,11 @@ import (
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
-	"github.com/umbracle/go-web3"
-	"github.com/umbracle/go-web3/jsonrpc"
-	"github.com/umbracle/go-web3/testutil"
+	"github.com/umbracle/ethgo"
+	"github.com/umbracle/ethgo/contract"
+	"github.com/umbracle/ethgo/jsonrpc"
+	"github.com/umbracle/ethgo/testutil"
+	"github.com/umbracle/ethgo/wallet"
 )
 
 func TestDeposit_Signing(t *testing.T) {
@@ -19,7 +21,7 @@ func TestDeposit_Signing(t *testing.T) {
 	}
 
 	kk := bls.NewRandomKey()
-	data, err := Input(kk, nil, web3.Gwei(MinGweiAmount).Uint64(), config)
+	data, err := Input(kk, nil, ethgo.Gwei(MinGweiAmount).Uint64(), config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,14 +55,17 @@ func TestDeposit_EndToEnd(t *testing.T) {
 	server := testutil.NewTestServer(t, nil)
 	defer server.Close()
 
+	ecdsaKey, _ := wallet.GenerateKey()
+	server.Transfer(ecdsaKey.Address(), ethgo.Ether(MinGweiAmount+1))
+
 	// deploy the contract
-	receipt, err := server.SendTxn(&web3.Transaction{
+	receipt, err := server.SendTxn(&ethgo.Transaction{
 		Input: DepositBin(),
 	})
 	assert.NoError(t, err)
 
 	client, _ := jsonrpc.NewClient(server.HTTPAddr())
-	code, err := client.Eth().GetCode(receipt.ContractAddress, web3.Latest)
+	code, err := client.Eth().GetCode(receipt.ContractAddress, ethgo.Latest)
 	assert.NoError(t, err)
 	assert.NotEqual(t, code, "0x")
 
@@ -70,21 +75,24 @@ func TestDeposit_EndToEnd(t *testing.T) {
 
 	key := bls.NewRandomKey()
 
-	input, err := Input(key, nil, web3.Gwei(MinGweiAmount).Uint64(), config)
+	input, err := Input(key, nil, ethgo.Gwei(MinGweiAmount).Uint64(), config)
 	assert.NoError(t, err)
 
 	// deploy transaction
-	contract := NewDeposit(receipt.ContractAddress, client)
-	contract.Contract().SetFrom(server.Account(0))
+	depositContract := NewDeposit(receipt.ContractAddress, contract.WithSender(ecdsaKey), contract.WithJsonRPC(client.Eth()))
 
-	txn := contract.Deposit(input.Pubkey, input.WithdrawalCredentials, input.Signature, input.Root)
-	txn.SetValue(web3.Ether(MinGweiAmount))
+	txn, err := depositContract.Deposit(input.Pubkey, input.WithdrawalCredentials, input.Signature, input.Root)
+	assert.NoError(t, err)
+
+	txn.WithOpts(&contract.TxnOpts{Value: ethgo.Ether(MinGweiAmount)})
 
 	assert.NoError(t, txn.Do())
-	assert.NoError(t, txn.Wait())
+
+	_, err = txn.Wait()
+	assert.NoError(t, err)
 
 	// query the contract
-	count, err := contract.GetDepositCount()
+	count, err := depositContract.GetDepositCount()
 	assert.NoError(t, err)
 	assert.Equal(t, int(count[0]), 1)
 }

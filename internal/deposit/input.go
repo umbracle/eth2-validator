@@ -5,7 +5,7 @@ import (
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
-	"github.com/umbracle/go-web3/abi"
+	"github.com/umbracle/ethgo/abi"
 )
 
 const MinGweiAmount = uint64(320)
