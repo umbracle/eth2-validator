@@ -215,6 +215,13 @@ func (e *Eth1Server) deployDeposit() error {
 		fmt.Println("-- cannot get receipt --")
 		fmt.Println(e.node.GetLogs())
 
+		for i := 0; i < 10; i++ {
+			fmt.Println("-----", i)
+			bb, err := provider.Eth().GetBlockByNumber(ethgo.BlockNumber(i), true)
+			fmt.Println(bb)
+			fmt.Println(err)
+			fmt.Println(bb.Transactions)
+		}
 		return err
 	}
 	e.deposit = receipt.ContractAddress
