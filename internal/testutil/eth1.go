@@ -212,6 +212,9 @@ func (e *Eth1Server) deployDeposit() error {
 	}
 	receipt, err := e.waitForReceipt(hash)
 	if err != nil {
+		fmt.Println("-- cannot get receipt --")
+		fmt.Println(e.node.GetLogs())
+
 		return err
 	}
 	e.deposit = receipt.ContractAddress
