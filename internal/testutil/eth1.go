@@ -172,7 +172,7 @@ func (e *Eth1Server) waitForReceipt(hash ethgo.Hash) (*ethgo.Receipt, error) {
 		if receipt != nil {
 			return receipt, nil
 		}
-		if count > 30 {
+		if count > 120 {
 			break
 		}
 		time.Sleep(1 * time.Second)
