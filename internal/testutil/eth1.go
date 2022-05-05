@@ -99,7 +99,7 @@ func NewEth1Server() (*Eth1Server, error) {
 	}
 	opts := []nodeOption{
 		WithName("eth1"),
-		WithContainer("ethereum/client-go", "latest"),
+		WithContainer("ethereum/client-go", "v1.9.25"),
 		WithCmd(cmd),
 		WithRetry(func(n *node) error {
 			return testHTTPEndpoint(fmt.Sprintf("http://%s:8545", n.IP()))
@@ -161,7 +161,6 @@ func (e *Eth1Server) fund(addr ethgo.Address) error {
 }
 
 func (e *Eth1Server) waitForReceipt(hash ethgo.Hash) (*ethgo.Receipt, error) {
-	fmt.Println("- wat for receipt", hash)
 	var count uint64
 	for {
 		receipt, err := e.client.Eth().GetTransactionReceipt(hash)
@@ -212,16 +211,6 @@ func (e *Eth1Server) deployDeposit() error {
 	}
 	receipt, err := e.waitForReceipt(hash)
 	if err != nil {
-		fmt.Println("-- cannot get receipt --")
-		fmt.Println(e.node.GetLogs())
-
-		for i := 0; i < 10; i++ {
-			fmt.Println("-----", i)
-			bb, err := provider.Eth().GetBlockByNumber(ethgo.BlockNumber(i), true)
-			fmt.Println(bb)
-			fmt.Println(err)
-			fmt.Println(bb.Transactions)
-		}
 		return err
 	}
 	e.deposit = receipt.ContractAddress
