@@ -2,16 +2,23 @@ package testutil
 
 import (
 	"bytes"
+	"context"
 	"encoding"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
-	"github.com/ory/dockertest/v3"
-	"github.com/ory/dockertest/v3/docker"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/strslice"
+	"github.com/docker/docker/client"
+	"github.com/hashicorp/go-hclog"
 )
 
 const (
@@ -26,12 +33,13 @@ type nodeOpts struct {
 	Name       string
 	Mount      []string
 	Files      map[string]string
+	Logger     hclog.Logger
 }
 
 type node struct {
-	pool     *dockertest.Pool
-	resource *dockertest.Resource
-	ip       string
+	cli  *client.Client
+	id   string
+	opts *nodeOpts
 }
 
 type nodeOption func(*nodeOpts)
@@ -90,24 +98,18 @@ func WithFile(path string, obj interface{}) nodeOption {
 
 func newNode(opts ...nodeOption) (*node, error) {
 	nOpts := &nodeOpts{
-		Mount: []string{},
-		Files: map[string]string{},
-		Cmd:   []string{},
+		Mount:  []string{},
+		Files:  map[string]string{},
+		Cmd:    []string{},
+		Logger: hclog.L(),
 	}
 	for _, opt := range opts {
 		opt(nOpts)
 	}
 
-	pool, err := dockertest.NewPool("")
+	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to docker: %s", err)
-	}
-
-	dockerOpts := &dockertest.RunOptions{
-		Repository: nOpts.Repository,
-		Tag:        nOpts.Tag,
-		Cmd:        nOpts.Cmd,
-		Mounts:     []string{},
 	}
 
 	// setup configuration
@@ -124,7 +126,6 @@ func newNode(opts ...nodeOption) (*node, error) {
 			return nil, err
 		}
 		mountMap[mount] = tmpDir
-		dockerOpts.Mounts = append(dockerOpts.Mounts, tmpDir+":"+mount)
 	}
 
 	// build the files
@@ -157,18 +158,36 @@ func newNode(opts ...nodeOption) (*node, error) {
 		}
 	}
 
-	resource, err := pool.RunWithOptions(dockerOpts)
+	config := &container.Config{
+		Image: nOpts.Repository + ":" + nOpts.Tag,
+		Cmd:   strslice.StrSlice(nOpts.Cmd),
+	}
+	hostConfig := &container.HostConfig{
+		Binds:       []string{},
+		NetworkMode: "host",
+	}
+	for mount, local := range mountMap {
+		hostConfig.Binds = append(hostConfig.Binds, local+":"+mount)
+	}
+
+	body, err := cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, nil, "")
 	if err != nil {
-		return nil, fmt.Errorf("could not start node: %s", err)
+		return nil, fmt.Errorf("could not create container: %v", err)
+	}
+	containerID := body.ID
+
+	// start container
+	if err := cli.ContainerStart(context.Background(), containerID, types.ContainerStartOptions{}); err != nil {
+		return nil, fmt.Errorf("could not start container: %v", err)
 	}
 
 	n := &node{
-		pool:     pool,
-		resource: resource,
-		ip:       resource.Container.NetworkSettings.IPAddress,
+		cli:  cli,
+		id:   containerID,
+		opts: nOpts,
 	}
 	if nOpts.Retry != nil {
-		if err := pool.Retry(func() error {
+		if err := retryFn(func() error {
 			return nOpts.Retry(n)
 		}); err != nil {
 			return nil, err
@@ -179,28 +198,41 @@ func newNode(opts ...nodeOption) (*node, error) {
 }
 
 func (n *node) Stop() {
-	n.pool.Purge(n.resource)
+	if err := n.cli.ContainerStop(context.Background(), n.id, nil); err != nil {
+		n.opts.Logger.Error("failed to stop container", "id", n.id, "err", err)
+	}
 }
 
 func (n *node) GetLogs() (string, error) {
 	wr := bytes.NewBuffer(nil)
 
-	logsOptions := docker.LogsOptions{
-		Container:    n.resource.Container.ID,
-		OutputStream: wr,
-		ErrorStream:  wr,
-		Follow:       false,
-		Stdout:       true,
-		Stderr:       true,
+	out, err := n.cli.ContainerLogs(context.Background(), n.id, types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
+	if err != nil {
+		return "", nil
 	}
-	if err := n.pool.Client.Logs(logsOptions); err != nil {
+	if _, err := io.Copy(wr, out); err != nil {
 		return "", err
 	}
-
 	logs := wr.String()
 	return logs, nil
 }
 
 func (n *node) IP() string {
-	return n.ip
+	return "127.0.0.1"
+}
+
+func retryFn(handler func() error) error {
+	timeoutT := time.NewTimer(1 * time.Minute)
+
+	for {
+		select {
+		case <-time.After(5 * time.Second):
+			if err := handler(); err == nil {
+				return nil
+			}
+
+		case <-timeoutT.C:
+			return fmt.Errorf("timeout")
+		}
+	}
 }
