@@ -68,7 +68,7 @@ func NewLighthouseValidator(account *Account, spec *Eth2Spec, beacon Node) (*Lig
 		"lighthouse", "vc",
 		"--debug-level", "debug",
 		"--datadir", "/data/node",
-		"--beacon-nodes", beacon.GetAddr("eth2.http"),
+		"--beacon-nodes", beacon.GetAddr(NodePortHttp),
 		"--testnet-dir", "/data",
 		"--init-slashing-protection",
 	}
