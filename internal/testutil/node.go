@@ -96,6 +96,22 @@ func WithFile(path string, obj interface{}) nodeOption {
 	}
 }
 
+func pullImage(logger hclog.Logger, client *client.Client, canonicalName string) error {
+	ctx := context.Background()
+	_, _, err := client.ImageInspectWithRaw(ctx, canonicalName)
+	if err != nil {
+		reader, err := client.ImagePull(ctx, canonicalName, types.ImagePullOptions{})
+		if err != nil {
+			return err
+		}
+		_, err = io.Copy(logger.StandardWriter(&hclog.StandardLoggerOptions{}), reader)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func newNode(opts ...nodeOption) (*node, error) {
 	nOpts := &nodeOpts{
 		Mount:  []string{},
@@ -106,6 +122,8 @@ func newNode(opts ...nodeOption) (*node, error) {
 	for _, opt := range opts {
 		opt(nOpts)
 	}
+
+	ctx := context.Background()
 
 	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
@@ -158,8 +176,23 @@ func newNode(opts ...nodeOption) (*node, error) {
 		}
 	}
 
+	imageName := nOpts.Repository + ":" + nOpts.Tag
+
+	// pull image if it does not exists
+	_, _, err = cli.ImageInspectWithRaw(ctx, imageName)
+	if err != nil {
+		reader, err := cli.ImagePull(ctx, imageName, types.ImagePullOptions{})
+		if err != nil {
+			return nil, err
+		}
+		_, err = io.Copy(nOpts.Logger.StandardWriter(&hclog.StandardLoggerOptions{}), reader)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	config := &container.Config{
-		Image: nOpts.Repository + ":" + nOpts.Tag,
+		Image: imageName,
 		Cmd:   strslice.StrSlice(nOpts.Cmd),
 	}
 	hostConfig := &container.HostConfig{
@@ -170,14 +203,14 @@ func newNode(opts ...nodeOption) (*node, error) {
 		hostConfig.Binds = append(hostConfig.Binds, local+":"+mount)
 	}
 
-	body, err := cli.ContainerCreate(context.Background(), config, hostConfig, &network.NetworkingConfig{}, nil, "")
+	body, err := cli.ContainerCreate(ctx, config, hostConfig, &network.NetworkingConfig{}, nil, "")
 	if err != nil {
 		return nil, fmt.Errorf("could not create container: %v", err)
 	}
 	containerID := body.ID
 
 	// start container
-	if err := cli.ContainerStart(context.Background(), containerID, types.ContainerStartOptions{}); err != nil {
+	if err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
 		return nil, fmt.Errorf("could not start container: %v", err)
 	}
 
