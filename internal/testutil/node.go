@@ -32,6 +32,7 @@ type nodeOpts struct {
 	Retry      func(n *node) error
 	Name       string
 	Mount      []string
+	InHost     bool
 	Files      map[string]string
 	Logger     hclog.Logger
 }
@@ -40,9 +41,16 @@ type node struct {
 	cli  *client.Client
 	id   string
 	opts *nodeOpts
+	ip   string
 }
 
 type nodeOption func(*nodeOpts)
+
+func WithHostNetwork() nodeOption {
+	return func(n *nodeOpts) {
+		n.InHost = true
+	}
+}
 
 func WithContainer(repository, tag string) nodeOption {
 	return func(n *nodeOpts) {
@@ -96,28 +104,13 @@ func WithFile(path string, obj interface{}) nodeOption {
 	}
 }
 
-func pullImage(logger hclog.Logger, client *client.Client, canonicalName string) error {
-	ctx := context.Background()
-	_, _, err := client.ImageInspectWithRaw(ctx, canonicalName)
-	if err != nil {
-		reader, err := client.ImagePull(ctx, canonicalName, types.ImagePullOptions{})
-		if err != nil {
-			return err
-		}
-		_, err = io.Copy(logger.StandardWriter(&hclog.StandardLoggerOptions{}), reader)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func newNode(opts ...nodeOption) (*node, error) {
 	nOpts := &nodeOpts{
 		Mount:  []string{},
 		Files:  map[string]string{},
 		Cmd:    []string{},
 		Logger: hclog.L(),
+		InHost: false,
 	}
 	for _, opt := range opts {
 		opt(nOpts)
@@ -196,9 +189,12 @@ func newNode(opts ...nodeOption) (*node, error) {
 		Cmd:   strslice.StrSlice(nOpts.Cmd),
 	}
 	hostConfig := &container.HostConfig{
-		Binds:       []string{},
-		NetworkMode: "host",
+		Binds: []string{},
 	}
+	if nOpts.InHost {
+		hostConfig.NetworkMode = "host"
+	}
+
 	for mount, local := range mountMap {
 		hostConfig.Binds = append(hostConfig.Binds, local+":"+mount)
 	}
@@ -218,7 +214,18 @@ func newNode(opts ...nodeOption) (*node, error) {
 		cli:  cli,
 		id:   containerID,
 		opts: nOpts,
+		ip:   "127.0.0.1",
 	}
+
+	// get the ip of the node if not running as a host network
+	if !nOpts.InHost {
+		containerData, err := cli.ContainerInspect(ctx, containerID)
+		if err != nil {
+			return nil, err
+		}
+		n.ip = containerData.NetworkSettings.IPAddress
+	}
+
 	if nOpts.Retry != nil {
 		if err := retryFn(func() error {
 			return nOpts.Retry(n)
@@ -251,7 +258,7 @@ func (n *node) GetLogs() (string, error) {
 }
 
 func (n *node) IP() string {
-	return "127.0.0.1"
+	return n.ip
 }
 
 func retryFn(handler func() error) error {
