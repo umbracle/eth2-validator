@@ -34,6 +34,7 @@ type nodeOpts struct {
 	Files      map[string]string
 	Logger     hclog.Logger
 	Output     []io.Writer
+	Labels     map[string]string
 }
 
 type node struct {
@@ -89,6 +90,14 @@ func WithOutput(output io.Writer) nodeOption {
 	}
 }
 
+func WithLabels(m map[string]string) nodeOption {
+	return func(n *nodeOpts) {
+		for k, v := range m {
+			n.Labels[k] = v
+		}
+	}
+}
+
 func WithFile(path string, obj interface{}) nodeOption {
 	return func(n *nodeOpts) {
 		var data []byte
@@ -118,6 +127,7 @@ func newNode(opts ...nodeOption) (*node, error) {
 		Logger: hclog.L(),
 		InHost: false,
 		Output: []io.Writer{},
+		Labels: map[string]string{},
 	}
 	for _, opt := range opts {
 		opt(nOpts)
@@ -209,8 +219,9 @@ func newNode(opts ...nodeOption) (*node, error) {
 	}
 
 	config := &container.Config{
-		Image: imageName,
-		Cmd:   strslice.StrSlice(cmdArgs),
+		Image:  imageName,
+		Cmd:    strslice.StrSlice(cmdArgs),
+		Labels: nOpts.Labels,
 	}
 	hostConfig := &container.HostConfig{
 		Binds: []string{},
