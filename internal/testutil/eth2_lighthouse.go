@@ -2,7 +2,6 @@ package testutil
 
 import (
 	"encoding/hex"
-	"fmt"
 
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
@@ -10,7 +9,7 @@ import (
 
 // LighthouseBeacon is a prysm test server
 type LighthouseBeacon struct {
-	node   *node
+	*node
 	config *beacon.ChainConfig
 }
 
@@ -23,7 +22,7 @@ func NewLighthouseBeacon(e *Eth1Server) (*LighthouseBeacon, error) {
 	cmd := []string{
 		"lighthouse", "beacon_node",
 		"--http", "--http-address", "0.0.0.0",
-		"--http-port", eth2ApiPort,
+		"--http-port", `{{ Port "eth2.http" }}`,
 		"--eth1-endpoints", e.http(),
 		"--testnet-dir", "/data",
 		"--http-allow-sync-stalled",
@@ -48,10 +47,6 @@ func NewLighthouseBeacon(e *Eth1Server) (*LighthouseBeacon, error) {
 	return srv, nil
 }
 
-func (b *LighthouseBeacon) IP() string {
-	return b.node.IP()
-}
-
 func (b *LighthouseBeacon) Type() NodeClient {
 	return Lighthouse
 }
@@ -73,7 +68,7 @@ func NewLighthouseValidator(account *Account, spec *Eth2Spec, beacon Node) (*Lig
 		"lighthouse", "vc",
 		"--debug-level", "debug",
 		"--datadir", "/data/node",
-		"--beacon-nodes", fmt.Sprintf("http://%s:%s", beacon.IP(), eth2ApiPort),
+		"--beacon-nodes", beacon.GetAddr("eth2.http"),
 		"--testnet-dir", "/data",
 		"--init-slashing-protection",
 	}

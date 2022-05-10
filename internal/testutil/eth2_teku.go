@@ -1,15 +1,13 @@
 package testutil
 
 import (
-	"fmt"
-
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
 )
 
 // TekuBeacon is a teku test server
 type TekuBeacon struct {
-	node   *node
+	*node
 	config *beacon.ChainConfig
 }
 
@@ -31,7 +29,7 @@ func NewTekuBeacon(e *Eth1Server) (*TekuBeacon, error) {
 		// config
 		"--network", "/data/config.yaml",
 		// port
-		"--rest-api-port", eth2ApiPort,
+		"--rest-api-port", `{{ Port "eth2.http" }}`,
 		// debug log
 		"--logging", "debug",
 	}
@@ -52,10 +50,6 @@ func NewTekuBeacon(e *Eth1Server) (*TekuBeacon, error) {
 		config: testConfig.GetChainConfig(),
 	}
 	return srv, nil
-}
-
-func (b *TekuBeacon) IP() string {
-	return b.node.IP()
 }
 
 func (b *TekuBeacon) Stop() {
@@ -79,7 +73,7 @@ func NewTekuValidator(account *Account, spec *Eth2Spec, beacon Node) (*TekuValid
 	cmd := []string{
 		"vc",
 		// beacon api
-		"--beacon-node-api-endpoint", fmt.Sprintf("http://%s:%s", beacon.IP(), eth2ApiPort),
+		"--beacon-node-api-endpoint", beacon.GetAddr(NodePortHttp),
 		// data
 		"--data-path", "/data",
 		// eth1x deposit contract (required for custom networks)

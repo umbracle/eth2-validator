@@ -1,13 +1,14 @@
 package testutil
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/umbracle/ethgo"
 )
 
-func TestEth1(t *testing.T) {
+func TestEth1_Deposit(t *testing.T) {
 	eth1, err := NewEth1Server()
 	assert.NoError(t, err)
 
@@ -25,4 +26,17 @@ func TestEth1(t *testing.T) {
 	count, err := contract.GetDepositCount(ethgo.Latest)
 	assert.NoError(t, err)
 	assert.Equal(t, int(count[0]), 1)
+}
+
+func TestEth1_Multiple(t *testing.T) {
+	// test that multiple eth1 nodes are deployed and
+	// get assigned a different port
+	srv1, err := NewEth1Server()
+	assert.NoError(t, err)
+
+	srv2, err := NewEth1Server()
+	assert.NoError(t, err)
+
+	fmt.Println(srv1.node.GetAddr(NodePortEth1Http))
+	fmt.Println(srv2.node.GetAddr(NodePortEth1Http))
 }

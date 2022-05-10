@@ -11,6 +11,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"text/template"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -19,10 +21,6 @@ import (
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
 	"github.com/hashicorp/go-hclog"
-)
-
-const (
-	eth2ApiPort = "5050"
 )
 
 type nodeOpts struct {
@@ -35,13 +33,15 @@ type nodeOpts struct {
 	InHost     bool
 	Files      map[string]string
 	Logger     hclog.Logger
+	Output     []io.Writer
 }
 
 type node struct {
-	cli  *client.Client
-	id   string
-	opts *nodeOpts
-	ip   string
+	cli   *client.Client
+	id    string
+	opts  *nodeOpts
+	ip    string
+	ports map[NodePort]uint64
 }
 
 type nodeOption func(*nodeOpts)
@@ -83,6 +83,12 @@ func WithMount(mount string) nodeOption {
 	}
 }
 
+func WithOutput(output io.Writer) nodeOption {
+	return func(n *nodeOpts) {
+		n.Output = append(n.Output, output)
+	}
+}
+
 func WithFile(path string, obj interface{}) nodeOption {
 	return func(n *nodeOpts) {
 		var data []byte
@@ -111,6 +117,7 @@ func newNode(opts ...nodeOption) (*node, error) {
 		Cmd:    []string{},
 		Logger: hclog.L(),
 		InHost: false,
+		Output: []io.Writer{},
 	}
 	for _, opt := range opts {
 		opt(nOpts)
@@ -184,9 +191,26 @@ func newNode(opts ...nodeOption) (*node, error) {
 		}
 	}
 
+	n := &node{
+		cli:   cli,
+		opts:  nOpts,
+		ip:    "127.0.0.1",
+		ports: map[NodePort]uint64{},
+	}
+
+	// build CLI arguments which might include template arguments
+	cmdArgs := []string{}
+	for _, cmd := range nOpts.Cmd {
+		cleanCmd, err := n.execCmd(cmd)
+		if err != nil {
+			return nil, err
+		}
+		cmdArgs = append(cmdArgs, cleanCmd)
+	}
+
 	config := &container.Config{
 		Image: imageName,
-		Cmd:   strslice.StrSlice(nOpts.Cmd),
+		Cmd:   strslice.StrSlice(cmdArgs),
 	}
 	hostConfig := &container.HostConfig{
 		Binds: []string{},
@@ -203,27 +227,29 @@ func newNode(opts ...nodeOption) (*node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not create container: %v", err)
 	}
-	containerID := body.ID
+	n.id = body.ID
 
 	// start container
-	if err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
+	if err := cli.ContainerStart(ctx, n.id, types.ContainerStartOptions{}); err != nil {
 		return nil, fmt.Errorf("could not start container: %v", err)
-	}
-
-	n := &node{
-		cli:  cli,
-		id:   containerID,
-		opts: nOpts,
-		ip:   "127.0.0.1",
 	}
 
 	// get the ip of the node if not running as a host network
 	if !nOpts.InHost {
-		containerData, err := cli.ContainerInspect(ctx, containerID)
+		containerData, err := cli.ContainerInspect(ctx, n.id)
 		if err != nil {
 			return nil, err
 		}
 		n.ip = containerData.NetworkSettings.IPAddress
+	}
+
+	if len(nOpts.Output) != 0 {
+		// track the logs to output
+		go func() {
+			if err := n.trackOutput(); err != nil {
+				n.opts.Logger.Error("failed to log container", "id", n.id, "err", err)
+			}
+		}()
 	}
 
 	if nOpts.Retry != nil {
@@ -237,10 +263,91 @@ func newNode(opts ...nodeOption) (*node, error) {
 	return n, nil
 }
 
+type NodePort string
+
+const (
+	// NodePortEth1Http is the http port for the eth1 node.
+	NodePortEth1Http = "eth1.http"
+
+	// NodePortP2P is the p2p port for an eth2 node.
+	NodePortP2P = "eth2.p2p"
+
+	// NodePortHttp is the http port for an eth2 node.
+	NodePortHttp = "eth2.http"
+
+	// NodePortPrysmGrpc is the specific prysm port for its Grpc server
+	NodePortPrysmGrpc = "eth2.prysm.grpc"
+)
+
+func uintPtr(i uint64) *uint64 {
+	return &i
+}
+
+// port ranges for each node value.
+var ports = map[NodePort]*uint64{
+	NodePortEth1Http:  uintPtr(8000),
+	NodePortP2P:       uintPtr(5000),
+	NodePortHttp:      uintPtr(7000),
+	NodePortPrysmGrpc: uintPtr(4000),
+}
+
+func (n *node) execCmd(cmd string) (string, error) {
+	t := template.New("node_cmd")
+	t.Funcs(template.FuncMap{
+		"Port": func(name NodePort) string {
+			port, ok := ports[name]
+			if !ok {
+				panic(fmt.Sprintf("Port '%s' not found", name))
+			}
+
+			relPort := atomic.AddUint64(port, 1)
+			n.ports[name] = relPort
+			return fmt.Sprintf("%d", relPort)
+		},
+	})
+
+	t, err := t.Parse(cmd)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, nil); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func (n *node) GetAddr(port NodePort) string {
+	num, ok := n.ports[port]
+	if !ok {
+		panic(fmt.Sprintf("port '%s' not found", port))
+	}
+	return fmt.Sprintf("http://%s:%d", n.ip, num)
+}
+
 func (n *node) Stop() {
 	if err := n.cli.ContainerStop(context.Background(), n.id, nil); err != nil {
 		n.opts.Logger.Error("failed to stop container", "id", n.id, "err", err)
 	}
+}
+
+func (n *node) trackOutput() error {
+	writer := io.MultiWriter(n.opts.Output...)
+
+	opts := types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+	}
+	out, err := n.cli.ContainerLogs(context.Background(), n.id, opts)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(writer, out); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (n *node) GetLogs() (string, error) {

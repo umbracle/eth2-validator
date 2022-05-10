@@ -22,49 +22,6 @@ const (
 	Lighthouse NodeClient = "lighthouse"
 )
 
-/*
-type Config struct {
-	Spec *Eth2Spec
-}
-
-type Framework struct {
-	t      *testing.T
-	Config *Eth2Spec
-	eth1   *Eth1Server
-}
-
-func (f *Framework) NewEth1Server() *Eth1Server {
-	srv := NewEth1Server(f.t)
-
-	f.Config.DepositContract = srv.deposit.String()
-
-	f.eth1 = srv
-	return srv
-}
-
-func (f *Framework) NewBeaconNode(typ NodeClient) Node {
-	if typ == Teku {
-		return NewTekuBeacon(f.t, f.eth1)
-	} else if typ == Prysm {
-		return NewPrysmBeacon(f.t, f.eth1)
-	} else if typ == Lighthouse {
-		return NewLighthouseBeacon(f.t, f.eth1)
-	}
-	panic("bad")
-}
-
-func (f *Framework) NewValidator(n Node, account *Account) {
-	typ := n.Type()
-	if typ == Teku {
-		NewTekuValidator(f.t, account.Bls, n.IP(), f.eth1)
-	} else if typ == Prysm {
-		NewPrysmValidator(f.t, account.Bls, n.IP())
-	} else if typ == Lighthouse {
-		NewLighthouseValidator(f.t, account.Bls, n.IP(), f.eth1)
-	}
-}
-*/
-
 type Account struct {
 	Bls   *bls.Key
 	Ecdsa *wallet.Key
@@ -84,7 +41,8 @@ func NewAccount() *Account {
 
 // Eth1Server is an eth1x testutil server using go-ethereum
 type Eth1Server struct {
-	node    *node
+	*node
+
 	deposit ethgo.Address
 	client  *jsonrpc.Client
 }
@@ -95,6 +53,7 @@ func NewEth1Server() (*Eth1Server, error) {
 		"--dev",
 		"--dev.period", "1",
 		"--http", "--http.addr", "0.0.0.0",
+		"--http.port", `{{ Port "eth1.http" }}`,
 		"--ws", "--ws.addr", "0.0.0.0",
 	}
 	opts := []nodeOption{
@@ -102,7 +61,7 @@ func NewEth1Server() (*Eth1Server, error) {
 		WithContainer("ethereum/client-go", "v1.9.25"),
 		WithCmd(cmd),
 		WithRetry(func(n *node) error {
-			return testHTTPEndpoint(fmt.Sprintf("http://%s:8545", n.IP()))
+			return testHTTPEndpoint(n.GetAddr(NodePortEth1Http))
 		}),
 	}
 
@@ -127,7 +86,7 @@ func NewEth1Server() (*Eth1Server, error) {
 }
 
 func (e *Eth1Server) http() string {
-	return fmt.Sprintf("http://%s:8545", e.node.IP())
+	return e.GetAddr(NodePortEth1Http)
 }
 
 const (
@@ -268,4 +227,5 @@ func testHTTPEndpoint(endpoint string) error {
 type Node interface {
 	IP() string
 	Type() NodeClient
+	GetAddr(NodePort) string
 }
