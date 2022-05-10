@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -37,6 +36,7 @@ func TestEth1_Multiple(t *testing.T) {
 	srv2, err := NewEth1Server()
 	assert.NoError(t, err)
 
-	fmt.Println(srv1.node.GetAddr(NodePortEth1Http))
-	fmt.Println(srv2.node.GetAddr(NodePortEth1Http))
+	addr1 := srv1.node.GetAddr(NodePortEth1Http)
+	addr2 := srv2.node.GetAddr(NodePortEth1Http)
+	assert.NotEqual(t, addr1, addr2)
 }
