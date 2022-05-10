@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
@@ -10,8 +11,8 @@ import (
 
 // PrysmBeacon is a prysm test server
 type PrysmBeacon struct {
+	*node
 	config *beacon.ChainConfig
-	node   *node
 }
 
 // NewPrysmBeacon creates a new prysm server
@@ -33,10 +34,12 @@ func NewPrysmBeacon(e *Eth1Server) (*PrysmBeacon, error) {
 		"--disable-sync",
 		// do not connect with any peers
 		"--no-discovery",
-		// host public
-		"--grpc-gateway-host", "0.0.0.0",
-		"--grpc-gateway-port", eth2ApiPort,
+		// grpc endpoint
 		"--rpc-host", "0.0.0.0",
+		"--rpc-port", `{{ Port "eth2.prysm.grpc" }}`,
+		// http gateway for the grpc server and Open spec http server
+		"--grpc-gateway-host", "0.0.0.0",
+		"--grpc-gateway-port", `{{ Port "eth2.http" }}`,
 		// config
 		"--chain-config-file", "/data/config.yaml",
 		// accept terms and conditions
@@ -65,10 +68,6 @@ func NewPrysmBeacon(e *Eth1Server) (*PrysmBeacon, error) {
 	return srv, nil
 }
 
-func (b *PrysmBeacon) IP() string {
-	return b.node.IP()
-}
-
 func (b *PrysmBeacon) Type() NodeClient {
 	return Prysm
 }
@@ -95,8 +94,8 @@ func NewPrysmValidator(account *Account, spec *Eth2Spec, beacon Node) (*PrysmVal
 		// wallet dir and password
 		"--wallet-dir", "/data",
 		"--wallet-password-file", "/data/wallet-password.txt",
-		// beacon node reference
-		"--beacon-rpc-provider", beacon.IP() + ":4000",
+		// beacon node reference of the GRPC endpoint
+		"--beacon-rpc-provider", strings.TrimPrefix(beacon.GetAddr(NodePortPrysmGrpc), "http://"),
 	}
 	opts := []nodeOption{
 		WithName("prysm-validator"),

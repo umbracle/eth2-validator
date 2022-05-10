@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -29,7 +28,7 @@ func TestEth2_Teku_SingleNode(t *testing.T) {
 
 	NewTekuValidator(account, spec, b)
 
-	api := beacon.NewHttpAPI(fmt.Sprintf("http://%s:5050", b.IP()))
+	api := beacon.NewHttpAPI(b.GetAddr(NodePortHttp))
 
 	assert.Eventually(t, func() bool {
 		syncing, err := api.Syncing()
