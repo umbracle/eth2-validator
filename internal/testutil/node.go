@@ -2,20 +2,25 @@ package testutil
 
 import (
 	"bytes"
+	"context"
 	"encoding"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
+	"text/template"
+	"time"
 
-	"github.com/ory/dockertest/v3"
-	"github.com/ory/dockertest/v3/docker"
-)
-
-const (
-	eth2ApiPort = "5050"
+	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/strslice"
+	"github.com/docker/docker/client"
+	"github.com/hashicorp/go-hclog"
 )
 
 type nodeOpts struct {
@@ -25,16 +30,28 @@ type nodeOpts struct {
 	Retry      func(n *node) error
 	Name       string
 	Mount      []string
+	InHost     bool
 	Files      map[string]string
+	Logger     hclog.Logger
+	Output     []io.Writer
+	Labels     map[string]string
 }
 
 type node struct {
-	pool     *dockertest.Pool
-	resource *dockertest.Resource
-	ip       string
+	cli   *client.Client
+	id    string
+	opts  *nodeOpts
+	ip    string
+	ports map[NodePort]uint64
 }
 
 type nodeOption func(*nodeOpts)
+
+func WithHostNetwork() nodeOption {
+	return func(n *nodeOpts) {
+		n.InHost = true
+	}
+}
 
 func WithContainer(repository, tag string) nodeOption {
 	return func(n *nodeOpts) {
@@ -67,6 +84,20 @@ func WithMount(mount string) nodeOption {
 	}
 }
 
+func WithOutput(output io.Writer) nodeOption {
+	return func(n *nodeOpts) {
+		n.Output = append(n.Output, output)
+	}
+}
+
+func WithLabels(m map[string]string) nodeOption {
+	return func(n *nodeOpts) {
+		for k, v := range m {
+			n.Labels[k] = v
+		}
+	}
+}
+
 func WithFile(path string, obj interface{}) nodeOption {
 	return func(n *nodeOpts) {
 		var data []byte
@@ -90,24 +121,23 @@ func WithFile(path string, obj interface{}) nodeOption {
 
 func newNode(opts ...nodeOption) (*node, error) {
 	nOpts := &nodeOpts{
-		Mount: []string{},
-		Files: map[string]string{},
-		Cmd:   []string{},
+		Mount:  []string{},
+		Files:  map[string]string{},
+		Cmd:    []string{},
+		Logger: hclog.L(),
+		InHost: false,
+		Output: []io.Writer{},
+		Labels: map[string]string{},
 	}
 	for _, opt := range opts {
 		opt(nOpts)
 	}
 
-	pool, err := dockertest.NewPool("")
+	ctx := context.Background()
+
+	cli, err := client.NewClientWithOpts(client.FromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("could not connect to docker: %s", err)
-	}
-
-	dockerOpts := &dockertest.RunOptions{
-		Repository: nOpts.Repository,
-		Tag:        nOpts.Tag,
-		Cmd:        nOpts.Cmd,
-		Mounts:     []string{},
 	}
 
 	// setup configuration
@@ -124,7 +154,6 @@ func newNode(opts ...nodeOption) (*node, error) {
 			return nil, err
 		}
 		mountMap[mount] = tmpDir
-		dockerOpts.Mounts = append(dockerOpts.Mounts, tmpDir+":"+mount)
 	}
 
 	// build the files
@@ -157,18 +186,85 @@ func newNode(opts ...nodeOption) (*node, error) {
 		}
 	}
 
-	resource, err := pool.RunWithOptions(dockerOpts)
+	imageName := nOpts.Repository + ":" + nOpts.Tag
+
+	// pull image if it does not exists
+	_, _, err = cli.ImageInspectWithRaw(ctx, imageName)
 	if err != nil {
-		return nil, fmt.Errorf("could not start node: %s", err)
+		reader, err := cli.ImagePull(ctx, imageName, types.ImagePullOptions{})
+		if err != nil {
+			return nil, err
+		}
+		_, err = io.Copy(nOpts.Logger.StandardWriter(&hclog.StandardLoggerOptions{}), reader)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	n := &node{
-		pool:     pool,
-		resource: resource,
-		ip:       resource.Container.NetworkSettings.IPAddress,
+		cli:   cli,
+		opts:  nOpts,
+		ip:    "127.0.0.1",
+		ports: map[NodePort]uint64{},
 	}
+
+	// build CLI arguments which might include template arguments
+	cmdArgs := []string{}
+	for _, cmd := range nOpts.Cmd {
+		cleanCmd, err := n.execCmd(cmd)
+		if err != nil {
+			return nil, err
+		}
+		cmdArgs = append(cmdArgs, cleanCmd)
+	}
+
+	config := &container.Config{
+		Image:  imageName,
+		Cmd:    strslice.StrSlice(cmdArgs),
+		Labels: nOpts.Labels,
+	}
+	hostConfig := &container.HostConfig{
+		Binds: []string{},
+	}
+	if nOpts.InHost {
+		hostConfig.NetworkMode = "host"
+	}
+
+	for mount, local := range mountMap {
+		hostConfig.Binds = append(hostConfig.Binds, local+":"+mount)
+	}
+
+	body, err := cli.ContainerCreate(ctx, config, hostConfig, &network.NetworkingConfig{}, nil, "")
+	if err != nil {
+		return nil, fmt.Errorf("could not create container: %v", err)
+	}
+	n.id = body.ID
+
+	// start container
+	if err := cli.ContainerStart(ctx, n.id, types.ContainerStartOptions{}); err != nil {
+		return nil, fmt.Errorf("could not start container: %v", err)
+	}
+
+	// get the ip of the node if not running as a host network
+	if !nOpts.InHost {
+		containerData, err := cli.ContainerInspect(ctx, n.id)
+		if err != nil {
+			return nil, err
+		}
+		n.ip = containerData.NetworkSettings.IPAddress
+	}
+
+	if len(nOpts.Output) != 0 {
+		// track the logs to output
+		go func() {
+			if err := n.trackOutput(); err != nil {
+				n.opts.Logger.Error("failed to log container", "id", n.id, "err", err)
+			}
+		}()
+	}
+
 	if nOpts.Retry != nil {
-		if err := pool.Retry(func() error {
+		if err := retryFn(func() error {
 			return nOpts.Retry(n)
 		}); err != nil {
 			return nil, err
@@ -178,29 +274,123 @@ func newNode(opts ...nodeOption) (*node, error) {
 	return n, nil
 }
 
+type NodePort string
+
+const (
+	// NodePortEth1Http is the http port for the eth1 node.
+	NodePortEth1Http = "eth1.http"
+
+	// NodePortP2P is the p2p port for an eth2 node.
+	NodePortP2P = "eth2.p2p"
+
+	// NodePortHttp is the http port for an eth2 node.
+	NodePortHttp = "eth2.http"
+
+	// NodePortPrysmGrpc is the specific prysm port for its Grpc server
+	NodePortPrysmGrpc = "eth2.prysm.grpc"
+)
+
+func uintPtr(i uint64) *uint64 {
+	return &i
+}
+
+// port ranges for each node value.
+var ports = map[NodePort]*uint64{
+	NodePortEth1Http:  uintPtr(8000),
+	NodePortP2P:       uintPtr(5000),
+	NodePortHttp:      uintPtr(7000),
+	NodePortPrysmGrpc: uintPtr(4000),
+}
+
+func (n *node) execCmd(cmd string) (string, error) {
+	t := template.New("node_cmd")
+	t.Funcs(template.FuncMap{
+		"Port": func(name NodePort) string {
+			port, ok := ports[name]
+			if !ok {
+				panic(fmt.Sprintf("Port '%s' not found", name))
+			}
+
+			relPort := atomic.AddUint64(port, 1)
+			n.ports[name] = relPort
+			return fmt.Sprintf("%d", relPort)
+		},
+	})
+
+	t, err := t.Parse(cmd)
+	if err != nil {
+		return "", err
+	}
+
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, nil); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func (n *node) GetAddr(port NodePort) string {
+	num, ok := n.ports[port]
+	if !ok {
+		panic(fmt.Sprintf("port '%s' not found", port))
+	}
+	return fmt.Sprintf("http://%s:%d", n.ip, num)
+}
+
 func (n *node) Stop() {
-	n.pool.Purge(n.resource)
+	if err := n.cli.ContainerStop(context.Background(), n.id, nil); err != nil {
+		n.opts.Logger.Error("failed to stop container", "id", n.id, "err", err)
+	}
+}
+
+func (n *node) trackOutput() error {
+	writer := io.MultiWriter(n.opts.Output...)
+
+	opts := types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+	}
+	out, err := n.cli.ContainerLogs(context.Background(), n.id, opts)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(writer, out); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (n *node) GetLogs() (string, error) {
 	wr := bytes.NewBuffer(nil)
 
-	logsOptions := docker.LogsOptions{
-		Container:    n.resource.Container.ID,
-		OutputStream: wr,
-		ErrorStream:  wr,
-		Follow:       false,
-		Stdout:       true,
-		Stderr:       true,
+	out, err := n.cli.ContainerLogs(context.Background(), n.id, types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true})
+	if err != nil {
+		return "", nil
 	}
-	if err := n.pool.Client.Logs(logsOptions); err != nil {
+	if _, err := io.Copy(wr, out); err != nil {
 		return "", err
 	}
-
 	logs := wr.String()
 	return logs, nil
 }
 
 func (n *node) IP() string {
 	return n.ip
+}
+
+func retryFn(handler func() error) error {
+	timeoutT := time.NewTimer(1 * time.Minute)
+
+	for {
+		select {
+		case <-time.After(5 * time.Second):
+			if err := handler(); err == nil {
+				return nil
+			}
+
+		case <-timeoutT.C:
+			return fmt.Errorf("timeout")
+		}
+	}
 }

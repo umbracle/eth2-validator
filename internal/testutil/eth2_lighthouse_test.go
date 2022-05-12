@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -28,7 +27,7 @@ func TestEth2_Lighthouse_SingleNode(t *testing.T) {
 
 	NewLighthouseValidator(account, spec, b)
 
-	api := beacon.NewHttpAPI(fmt.Sprintf("http://%s:5050", b.IP()))
+	api := beacon.NewHttpAPI(b.GetAddr(NodePortHttp))
 
 	require.Eventually(t, func() bool {
 		syncing, err := api.Syncing()
