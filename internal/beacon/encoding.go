@@ -16,9 +16,6 @@ func Marshal(obj interface{}) ([]byte, error) {
 	if val.Kind() == reflect.Ptr {
 		val = val.Elem()
 	}
-	if val.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("not a struct")
-	}
 
 	raw, err := marshalImpl(val)
 	if err != nil {
@@ -49,7 +46,11 @@ func marshalImpl(v reflect.Value) (interface{}, error) {
 	case reflect.Array, reflect.Slice:
 		out := []interface{}{}
 		for i := 0; i < v.Len(); i++ {
-			out = append(out, v.Index(i))
+			elem, err := marshalImpl(v.Index(i))
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, elem)
 		}
 		return out, nil
 
@@ -81,9 +82,10 @@ func marshalImpl(v reflect.Value) (interface{}, error) {
 
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 		return strconv.Itoa(int(v.Uint())), nil
-	}
 
-	return nil, nil
+	default:
+		panic("BUG")
+	}
 }
 
 func convertArrayToBytes(value reflect.Value) reflect.Value {
@@ -97,11 +99,14 @@ func Unmarshal(data []byte, obj interface{}) error {
 	if err := json.Unmarshal(data, &out1); err != nil {
 		return err
 	}
+
+	metadata := &mapstructure.Metadata{}
 	dc := &mapstructure.DecoderConfig{
 		Result:           obj,
 		WeaklyTypedInput: true,
 		DecodeHook:       customWeb3Hook,
 		TagName:          "json",
+		Metadata:         metadata,
 	}
 	ms, err := mapstructure.NewDecoder(dc)
 	if err != nil {
@@ -109,6 +114,11 @@ func Unmarshal(data []byte, obj interface{}) error {
 	}
 	if err = ms.Decode(out1); err != nil {
 		return err
+	}
+	if len(metadata.Unused) != 0 {
+		// this migth help to untrack errors on some keys that are not being tracked
+		// and we really need.
+		return fmt.Errorf("unmarshal error unused keys: %s", metadata.Unused)
 	}
 	return nil
 }

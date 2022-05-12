@@ -105,11 +105,11 @@ TERMINAL_BLOCK_HASH_ACTIVATION_EPOCH: 18446744073709551615
 # 172800 seconds (2 days)
 GENESIS_DELAY: {{.GenesisDelay}}
 # 12 seconds
-SECONDS_PER_SLOT: 12
+SECONDS_PER_SLOT: {{.SecondsPerSlot}}
 # 2**0 (= 1) slots 12 seconds
 MIN_ATTESTATION_INCLUSION_DELAY: 1
 # 2**5 (= 32) slots 6.4 minutes
-SLOTS_PER_EPOCH: 32
+SLOTS_PER_EPOCH: {{.SlotsPerEpoch}}
 # 2**0 (= 1) epochs 6.4 minutes
 MIN_SEED_LOOKAHEAD: 1
 # 2**2 (= 4) epochs 25.6 minutes

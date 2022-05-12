@@ -105,3 +105,7 @@ func NewTekuValidator(account *Account, spec *Eth2Spec, beacon Node) (*TekuValid
 	}
 	return &TekuValidator{node: node}, nil
 }
+
+func (v *TekuValidator) IP() string {
+	return v.node.IP()
+}

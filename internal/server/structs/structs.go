@@ -7,8 +7,8 @@ type AggregateAndProof struct {
 }
 
 type Checkpoint struct {
-	Epoch uint64 `json:"epoch"`
-	Root  []byte `json:"root" ssz-size:"32"`
+	Epoch uint64   `json:"epoch"`
+	Root  [32]byte `json:"root" ssz-size:"32"`
 }
 
 type Slot uint64 // alias from the same package
@@ -145,10 +145,11 @@ type BeaconState struct {
 }
 
 type BeaconBlock struct {
-	Slot       uint64           `json:"slot"`
-	ParentRoot []byte           `json:"parent_root" ssz-size:"32"`
-	StateRoot  []byte           `json:"state_root" ssz-size:"32"`
-	Body       *BeaconBlockBody `json:"body"`
+	Slot          uint64           `json:"slot"`
+	ProposerIndex uint64           `json:"proposer_index"`
+	ParentRoot    []byte           `json:"parent_root" ssz-size:"32"`
+	StateRoot     []byte           `json:"state_root" ssz-size:"32"`
+	Body          *BeaconBlockBody `json:"body"`
 }
 
 type SignedBeaconBlock struct {
@@ -171,7 +172,7 @@ type BeaconBlockBody struct {
 	Eth1Data          *Eth1Data              `json:"eth1_data"`
 	Graffiti          [32]byte               `json:"graffiti"`
 	ProposerSlashings []*ProposerSlashing    `json:"proposer_slashings" ssz-max:"16"`
-	AttesterSlashings []*AttesterSlashing    `json:"attester_slashings" ssz-max:"1"`
+	AttesterSlashings []*AttesterSlashing    `json:"attester_slashings" ssz-max:"2"`
 	Attestations      []*Attestation         `json:"attestations" ssz-max:"128"`
 	Deposits          []*Deposit             `json:"deposits" ssz-max:"16"`
 	VoluntaryExits    []*SignedVoluntaryExit `json:"voluntary_exits" ssz-max:"16"`

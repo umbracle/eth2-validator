@@ -121,3 +121,9 @@ func compareJSON(a, b []byte) error {
 	}
 	return nil
 }
+
+func TestMarshalSimp(t *testing.T) {
+	res, err := Marshal([]string{"1"})
+	assert.NoError(t, err)
+	assert.Equal(t, string(res), `["1"]`)
+}
