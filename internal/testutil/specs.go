@@ -30,6 +30,8 @@ type Eth2Spec struct {
 	EpochsPerEth1VotingPeriod int
 	ShardCommitteePeriod      int
 	NetworkID                 int
+	SlotsPerEpoch             int
+	SecondsPerSlot            int
 	DepositContract           string
 }
 
@@ -68,7 +70,12 @@ func (e *Eth2Spec) buildConfig() []byte {
 	if e.NetworkID == 0 {
 		e.NetworkID = 1337
 	}
-
+	if e.SlotsPerEpoch == 0 {
+		e.SlotsPerEpoch = 12 // default 32 slots
+	}
+	if e.SecondsPerSlot == 0 {
+		e.SecondsPerSlot = 2 // default 12 seconds
+	}
 	tmpl, err := template.ParseFS(res, "fixtures/config.yaml.tmpl")
 	if err != nil {
 		panic(fmt.Sprintf("BUG: Failed to load eth2 config template: %v", err))

@@ -13,7 +13,6 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/r3labs/sse/v2"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
-	"github.com/umbracle/ethgo"
 )
 
 type HttpAPI struct {
@@ -26,7 +25,7 @@ func NewHttpAPI(url string) *HttpAPI {
 }
 
 func (h *HttpAPI) SetLogger(logger hclog.Logger) {
-	h.logger = logger
+	h.logger = logger.Named(h.url)
 }
 
 func (h *HttpAPI) post(path string, input interface{}, out interface{}) error {
@@ -36,12 +35,29 @@ func (h *HttpAPI) post(path string, input interface{}, out interface{}) error {
 	}
 	responseBody := bytes.NewBuffer(postBody)
 
+	h.logger.Trace("Post request", "path", path, "content", string(postBody))
+
 	resp, err := http.Post(h.url+path, "application/json", responseBody)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
+	if out == nil {
+		// nothing is expected, make sure its a 200 resp code
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return err
+		}
+		if string(data) == "null" {
+			return nil
+		}
+		if string(data) == "" {
+			return nil
+		}
+		// its a json that represnets an error, just reutrn it
+		return fmt.Errorf("json failed to decode post message: '%s'", string(data))
+	}
 	if err := h.decodeResp(resp, out); err != nil {
 		return err
 	}
@@ -55,6 +71,8 @@ func (h *HttpAPI) get(path string, out interface{}) error {
 	}
 	defer resp.Body.Close()
 
+	h.logger.Trace("Get request", "path", path)
+
 	if err := h.decodeResp(resp, out); err != nil {
 		return err
 	}
@@ -67,8 +85,10 @@ func (h *HttpAPI) decodeResp(resp *http.Response, out interface{}) error {
 		return err
 	}
 
+	h.logger.Trace("Http response", "data", string(data))
+
 	var output struct {
-		Data json.RawMessage
+		Data json.RawMessage `json:"data,omitempty"`
 	}
 	if err := json.Unmarshal(data, &output); err != nil {
 		return err
@@ -92,9 +112,9 @@ func (h *HttpAPI) Syncing() (*Syncing, error) {
 }
 
 type Genesis struct {
-	Time uint64     `json:"genesis_time"`
-	Root ethgo.Hash `json:"genesis_validators_root"`
-	Fork string     `json:"genesis_fork_version"`
+	Time uint64 `json:"genesis_time"`
+	Root []byte `json:"genesis_validators_root"`
+	Fork string `json:"genesis_fork_version"`
 }
 
 func (h *HttpAPI) Genesis(ctx context.Context) (*Genesis, error) {
@@ -153,12 +173,13 @@ func (h *HttpAPI) Events(ctx context.Context, topics []string, handler func(obj 
 }
 
 type AttesterDuty struct {
-	PubKey          string `json:"pubkey"`
-	ValidatorIndex  uint   `json:"validator_index"`
-	Slot            uint64 `json:"slot"`
-	CommitteeIndex  uint64 `json:"committee_index"`
-	CommitteeLength uint64 `json:"committee_length"`
-	CommitteeAtSlot uint64 `json:"committees_at_slot"`
+	PubKey                  string `json:"pubkey"`
+	ValidatorIndex          uint   `json:"validator_index"`
+	Slot                    uint64 `json:"slot"`
+	CommitteeIndex          uint64 `json:"committee_index"`
+	CommitteeLength         uint64 `json:"committee_length"`
+	CommitteeAtSlot         uint64 `json:"committees_at_slot"`
+	ValidatorCommitteeIndex uint64 `json:"validator_committee_index"`
 }
 
 func (h *HttpAPI) GetAttesterDuties(epoch uint64, indexes []string) ([]*AttesterDuty, error) {
@@ -179,14 +200,14 @@ func (h *HttpAPI) GetProposerDuties(epoch uint64) ([]*ProposerDuty, error) {
 	return out, err
 }
 
-type SyncDuty struct {
+type CommitteeSyncDuty struct {
 	PubKey                        string   `json:"pubkey"`
 	ValidatorIndex                uint     `json:"validator_index"`
 	ValidatorSyncCommitteeIndices []string `json:"validator_sync_committee_indices"`
 }
 
-func (h *HttpAPI) GetCommitteeSyncDuties(epoch uint64, indexes []string) ([]*SyncDuty, error) {
-	var out []*SyncDuty
+func (h *HttpAPI) GetCommitteeSyncDuties(epoch uint64, indexes []string) ([]*CommitteeSyncDuty, error) {
+	var out []*CommitteeSyncDuty
 	err := h.post(fmt.Sprintf("/eth/v1/validator/duties/sync/%d", epoch), indexes, &out)
 	return out, err
 }
@@ -212,7 +233,17 @@ func (h *HttpAPI) GetBlock(slot uint64, randao []byte) (*structs.BeaconBlock, er
 }
 
 func (h *HttpAPI) PublishSignedBlock(block *structs.SignedBeaconBlock) error {
-	var out interface{}
-	err := h.post("/eth/v1/beacon/blocks", block, &out)
+	err := h.post("/eth/v1/beacon/blocks", block, nil)
+	return err
+}
+
+func (h *HttpAPI) RequestAttestationData(slot uint64, committeeIndex uint64) (*structs.AttestationData, error) {
+	var out *structs.AttestationData
+	err := h.get(fmt.Sprintf("/eth/v1/validator/attestation_data?slot=%d&committee_index=%d", slot, committeeIndex), &out)
+	return out, err
+}
+
+func (h *HttpAPI) PublishAttestations(data []*structs.Attestation) error {
+	err := h.post("/eth/v1/beacon/pool/attestations", data, nil)
 	return err
 }

@@ -33,6 +33,7 @@ func TestHttpEncoding(t *testing.T) {
 
 	example := []byte(`{
 		"slot": "20",
+		"proposer_index": "0",
 		"parent_root": "0x1d96d93260c726fc63cf8986c5cf8fde9096f032818dbacfd2186b531423401f",
 		"state_root": "0xfd9a880fd6a30f1ef9aba66f86c5160829702a44332281e0028b760b05476847",
 		"body": {
@@ -120,4 +121,10 @@ func compareJSON(a, b []byte) error {
 		return fmt.Errorf("not equal")
 	}
 	return nil
+}
+
+func TestMarshalSimp(t *testing.T) {
+	res, err := Marshal([]string{"1"})
+	assert.NoError(t, err)
+	assert.Equal(t, string(res), `["1"]`)
 }

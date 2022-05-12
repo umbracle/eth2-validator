@@ -21,6 +21,9 @@ type Config struct {
 	// Debug enables debug mode
 	Debug bool `hcl:"debug"`
 
+	// PrivKey is a private key to start
+	PrivKey string
+
 	// DataDir is the store data dir
 	DataDir string `hcl:"data_dir"`
 

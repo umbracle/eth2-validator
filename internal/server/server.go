@@ -10,9 +10,9 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 	"github.com/hashicorp/go-hclog"
 	"github.com/umbracle/eth2-validator/internal/beacon"
+	"github.com/umbracle/eth2-validator/internal/bitlist"
 	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
-	"github.com/umbracle/eth2-validator/internal/server/state"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"google.golang.org/grpc"
 )
@@ -26,7 +26,6 @@ type Server struct {
 	shutdownCh chan struct{}
 	client     *beacon.HttpAPI
 	grpcServer *grpc.Server
-	state      *state.State
 	validator  *validator
 }
 
@@ -38,61 +37,40 @@ type validator struct {
 
 // NewServer starts a new validator
 func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
-
 	v := &Server{
 		config:     config,
 		logger:     logger,
 		shutdownCh: make(chan struct{}),
 	}
 
-	vv := structs.AttestationData{}
-	fmt.Println(vv)
-
 	if err := v.setupGRPCServer(config.GrpcAddr); err != nil {
 		return nil, err
 	}
 
-	//fmt.Println(config.BeaconConfig.MinGenesisTime)
-	//fmt.Println(time.Now().Unix())
+	v.client = beacon.NewHttpAPI(config.Endpoint)
 
-	v.client = beacon.NewHttpAPI("http://172.17.0.3:5050")
-
-	// h.Events(context.Background())
+	if err := v.addValidator(config.PrivKey); err != nil {
+		return nil, fmt.Errorf("failed to start validator %v", err)
+	}
 
 	logger.Info("validator started")
-
-	// fmt.Println(h.GetAttesterDuties(8, []string{"0"}))
-
-	/*
-		duties, err := h.GetProposerDuties(context.Background(), 5)
-		if err != nil {
-			panic(err)
-		}
-		for _, duty := range duties {
-			fmt.Println("-- duty --")
-			fmt.Println(duty.Slot)
-		}
-	*/
-
-	v.addValidator()
 	go v.run()
-
 	return v, nil
 }
 
-func (v *Server) addValidator() {
-	buf, err := hex.DecodeString("3dbab17387f48bdd0784d3c844c25bd06be26d8284fa6999827780b099e75a40")
+func (v *Server) addValidator(privKey string) error {
+	buf, err := hex.DecodeString(privKey)
 	if err != nil {
-		panic(err)
+		return err
 	}
 	key, err := bls.NewKeyFromPriv(buf)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	graffity, err := hex.DecodeString("cf8e0d4e9587369b2301d0790347320302cc0943d5a1884560367e8208d920f2")
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	v.validator = &validator{
@@ -100,22 +78,17 @@ func (v *Server) addValidator() {
 		key:      key,
 		graffity: graffity,
 	}
+	return nil
 }
 
 type dutyUpdates struct {
-	epoch uint64
-	slot  uint64
-	//attester []*beacon.AttesterDuty
+	epoch    uint64
+	slot     uint64
+	attester []*beacon.AttesterDuty
 	proposer []*beacon.ProposerDuty // start here
 }
 
 func (v *Server) run() {
-
-	for i := 14; i < 16; i++ {
-		v.runDuty(&dutyUpdates{slot: uint64(i)})
-	}
-
-	return
 
 	dutyUpdates := make(chan *dutyUpdates, 8)
 	go v.watchDuties(dutyUpdates)
@@ -123,7 +96,20 @@ func (v *Server) run() {
 	for {
 		select {
 		case update := <-dutyUpdates:
-			v.runDuty(update)
+
+			if update.attester != nil {
+				if err := v.runAttestation(update.attester[0]); err != nil {
+					v.logger.Error("failed to send attestation", "err", err)
+				} else {
+					v.logger.Info("attestation proposed successfully", "slot", update.slot)
+				}
+			}
+
+			if err := v.runDuty(update); err != nil {
+				v.logger.Error("failed to propose block: %v", err)
+			} else {
+				v.logger.Info("block proposed successfully", "slot", update.slot)
+			}
 
 		case <-v.shutdownCh:
 			return
@@ -139,86 +125,140 @@ func uint64SSZ(epoch uint64) *ssz.Hasher {
 	return hh
 }
 
-func (v *Server) runDuty(update *dutyUpdates) {
-	fmt.Println("- run duty -")
-	fmt.Println(update.proposer)
+func (v *Server) runAttestation(duty *beacon.AttesterDuty) error {
+	// TODO: hardcoded
+	time.Sleep(1 * time.Second)
 
+	attestationData, err := v.client.RequestAttestationData(duty.Slot, duty.CommitteeIndex)
+	if err != nil {
+		return err
+	}
+
+	indexed := &structs.IndexedAttestation{
+		AttestationIndices: []uint64{0},
+		Data:               attestationData,
+	}
+
+	hh := ssz.NewHasher()
+	if err := indexed.Data.HashTreeRootWith(hh); err != nil {
+		return err
+	}
+
+	attestedSignature, err := v.signHash(v.config.BeaconConfig.DomainBeaconAttester, hh)
+	if err != nil {
+		return err
+	}
+
+	bitlist := bitlist.NewBitlist(duty.CommitteeLength)
+	bitlist.SetBitAt(duty.CommitteeIndex, true)
+
+	attestation := &structs.Attestation{
+		Data:            attestationData,
+		AggregationBits: bitlist,
+		Signature:       attestedSignature,
+	}
+
+	if err := v.client.PublishAttestations([]*structs.Attestation{attestation}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (v *Server) runDuty(update *dutyUpdates) error {
 	// create the randao
 
 	epochSSZ := uint64SSZ(update.epoch)
-	randaoReveal := v.signHash(v.config.BeaconConfig.DomainRandao, epochSSZ)
-
-	fmt.Println("-- randao reveal --")
-	fmt.Println(randaoReveal)
+	randaoReveal, err := v.signHash(v.config.BeaconConfig.DomainRandao, epochSSZ)
+	if err != nil {
+		return err
+	}
 
 	block, err := v.client.GetBlock(update.slot, randaoReveal)
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	hh := ssz.NewHasher()
 	if err := block.HashTreeRootWith(hh); err != nil {
-		panic(err)
+		return err
 	}
 
-	blockSignature := v.signHash(v.config.BeaconConfig.DomainBeaconProposer, hh)
-
-	fmt.Println("-- block --")
-	fmt.Println(blockSignature)
-
+	blockSignature, err := v.signHash(v.config.BeaconConfig.DomainBeaconProposer, hh)
+	if err != nil {
+		return err
+	}
 	signedBlock := &structs.SignedBeaconBlock{
 		Block:     block,
 		Signature: blockSignature,
 	}
 
 	if err := v.client.PublishSignedBlock(signedBlock); err != nil {
-		panic(err)
+		return err
 	}
+	return nil
 }
 
-func (v *Server) signHash(domain structs.Domain, obj *ssz.Hasher) []byte {
-	ddd, err := v.config.BeaconConfig.ComputeDomain(domain, nil, nil)
+func (v *Server) signHash(domain structs.Domain, obj *ssz.Hasher) ([]byte, error) {
+	genesis, err := v.client.Genesis(context.Background())
 	if err != nil {
-		panic(err)
+		return nil, err
+	}
+
+	ddd, err := v.config.BeaconConfig.ComputeDomain(domain, nil, genesis.Root)
+	if err != nil {
+		return nil, err
 	}
 
 	unsignedMsgRoot, err := obj.HashRoot()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
+
 	rootToSign, err := ssz.HashWithDefaultHasher(&structs.SigningData{
 		ObjectRoot: unsignedMsgRoot[:],
 		Domain:     ddd,
 	})
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	signature, err := v.validator.key.Sign(rootToSign)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return signature
+	return signature, nil
 }
 
 func (v *Server) getEpoch(slot uint64) uint64 {
 	return slot / v.config.BeaconConfig.SlotsPerEpoch
 }
 
+func (v *Server) isEpochStart(slot uint64) bool {
+	return slot%v.config.BeaconConfig.SlotsPerEpoch == 0
+}
+
+func (v *Server) isEpochEnd(slot uint64) bool {
+	return v.isEpochStart(slot + 1)
+}
+
 func (v *Server) watchDuties(updates chan *dutyUpdates) {
-	secondsPerSlot := time.Duration(v.config.BeaconConfig.SecondsPerSlot) * time.Second
-	fmt.Println(secondsPerSlot)
-
-	timer := time.NewTimer(0)
-
-	syncing, err := v.client.Syncing()
+	genesis, err := v.client.Genesis(context.Background())
 	if err != nil {
 		panic(err)
 	}
-	headSlot := syncing.HeadSlot
-	epoch := v.getEpoch(headSlot)
 
-	fmt.Println("headSlot", headSlot, "epoch", epoch)
+	genesisTime := time.Unix(int64(genesis.Time), 0)
+
+	bb := newBeaconTracker(v.logger, genesisTime, v.config.BeaconConfig.SecondsPerSlot)
+	go bb.run()
+
+	// wait for the ready channel to be closed
+	<-bb.readyCh
+
+	epoch := v.getEpoch(bb.startSlot)
+	v.logger.Info("Start slot", "slot", bb.startSlot, "epoch", epoch)
+
+EPOCH:
 
 	// query duties for this epoch
 	attesterDuties, err := v.client.GetAttesterDuties(epoch, []string{"0"})
@@ -230,36 +270,37 @@ func (v *Server) watchDuties(updates chan *dutyUpdates) {
 		panic(err)
 	}
 
-	fmt.Println(attesterDuties)
-	fmt.Println(proposerDuties)
-
 	for {
 		select {
-		case <-timer.C:
+		case res := <-bb.resCh:
+			slot := res.Slot
+
 			var slotAttester []*beacon.AttesterDuty
 			for _, x := range attesterDuties {
-				if x.Slot == headSlot {
+				if x.Slot == slot {
 					slotAttester = append(slotAttester, x)
 				}
 			}
+
 			var slotProposer []*beacon.ProposerDuty
 			for _, x := range proposerDuties {
-				if x.Slot == headSlot {
+				if x.Slot == slot {
 					slotProposer = append(slotProposer, x)
 				}
 			}
 
 			job := &dutyUpdates{
-				epoch: epoch,
-				slot:  headSlot,
-				//attester: slotAttester,
+				epoch:    epoch,
+				slot:     slot,
+				attester: slotAttester,
 				proposer: slotProposer,
 			}
-
 			updates <- job
-			headSlot++
 
-			timer.Reset(secondsPerSlot)
+			if v.isEpochEnd(res.Slot) {
+				epoch++
+				goto EPOCH
+			}
 
 		case <-v.shutdownCh:
 			return

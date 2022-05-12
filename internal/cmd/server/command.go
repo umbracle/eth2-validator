@@ -11,8 +11,8 @@ import (
 	"github.com/google/gops/agent"
 	"github.com/hashicorp/go-hclog"
 	"github.com/mitchellh/cli"
-	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/server"
+	"github.com/umbracle/eth2-validator/internal/testutil"
 )
 
 // Command is the command that starts the agent
@@ -92,13 +92,13 @@ func (c *Command) handleSignals() int {
 }
 
 func buildValidatorConfig(c *Config) (*server.Config, error) {
-	beaconConfig, err := beacon.ReadChainConfig(c.BeaconChain)
-	if err != nil {
-		return nil, err
-	}
+	testConfig := &testutil.Eth2Spec{}
 
 	cc := server.DefaultConfig()
-	cc.BeaconConfig = beaconConfig
+	cc.BeaconConfig = testConfig.GetChainConfig()
+	cc.Endpoint = c.Endpoint
+	cc.PrivKey = c.PrivKey
+
 	return cc, nil
 }
 
@@ -115,6 +115,8 @@ func (c *Command) readConfig(args []string) (*Config, error) {
 	flags.StringVar(&cliConfig.DataDir, "data-dir", "", "")
 	flags.BoolVar(&cliConfig.Debug, "debug", false, "")
 	flags.StringVar(&cliConfig.BeaconChain, "beacon-chain", "", "")
+	flags.StringVar(&cliConfig.Endpoint, "endpoint", "", "")
+	flags.StringVar(&cliConfig.PrivKey, "priv-key", "", "")
 
 	if err := flags.Parse(args); err != nil {
 		return nil, err

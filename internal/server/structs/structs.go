@@ -7,8 +7,8 @@ type AggregateAndProof struct {
 }
 
 type Checkpoint struct {
-	Epoch uint64 `json:"epoch"`
-	Root  []byte `json:"root" ssz-size:"32"`
+	Epoch uint64   `json:"epoch"`
+	Root  [32]byte `json:"root" ssz-size:"32"`
 }
 
 type Slot uint64 // alias from the same package
@@ -88,10 +88,6 @@ type SignedVoluntaryExit struct {
 	Signature []byte         `json:"signature" ssz-size:"96"`
 }
 
-type Eth1Block struct {
-	Timestamp uint64 `json:"timestamp"`
-}
-
 type Eth1Data struct {
 	DepositRoot  []byte `json:"deposit_root" ssz-size:"32"`
 	DepositCount uint64 `json:"deposit_count"`
@@ -109,9 +105,8 @@ type HistoricalBatch struct {
 }
 
 type ProposerSlashing struct {
-	ProposerIndex uint64                   `json:"proposer_index"`
-	Header1       *SignedBeaconBlockHeader `json:"signed_header_1"`
-	Header2       *SignedBeaconBlockHeader `json:"signed_header_2"`
+	Header1 *SignedBeaconBlockHeader `json:"signed_header_1"`
+	Header2 *SignedBeaconBlockHeader `json:"signed_header_2"`
 }
 
 type AttesterSlashing struct {
@@ -119,36 +114,12 @@ type AttesterSlashing struct {
 	Attestation2 *IndexedAttestation `json:"attestation_2"`
 }
 
-type BeaconState struct {
-	GenesisTime       uint64             `json:"genesis_time"`
-	Slot              uint64             `json:"slot"`
-	Fork              *Fork              `json:"fork"`
-	LatestBlockHeader *BeaconBlockHeader `json:"latest_block_header"`
-	BlockRoots        [64][32]byte       `json:"block_roots" ssz-size:"64,32"`
-	StateRoots        [][32]byte         `json:"state_roots" ssz-size:"64"`
-	HistoricalRoots   [][32]byte         `json:"historical_roots" ssz-max:"16777216"`
-	Eth1Data          *Eth1Data          `json:"eth1_data"`
-	Eth1DataVotes     []*Eth1Data        `json:"eth1_data_votes" ssz-max:"16"`
-	Eth1DepositIndex  uint64             `json:"eth1_deposit_index"`
-	Validators        []*Validator       `json:"validators" ssz-max:"1099511627776"`
-	Balances          []uint64           `json:"balances" ssz-max:"1099511627776"`
-	RandaoMixes       [][]byte           `json:"randao_mixes" ssz-size:"64,32"`
-	Slashings         []uint64           `json:"slashings" ssz-size:"64"`
-
-	PreviousEpochAttestations []*PendingAttestation `json:"previous_epoch_attestations" ssz-max:"1024"`
-	CurrentEpochAttestations  []*PendingAttestation `json:"current_epoch_attestations" ssz-max:"1024"`
-	JustificationBits         []byte                `json:"justification_bits" ssz-size:"1"`
-
-	PreviousJustifiedCheckpoint *Checkpoint `json:"previous_justified_checkpoint"`
-	CurrentJustifiedCheckpoint  *Checkpoint `json:"current_justified_checkpoint"`
-	FinalizedCheckpoint         *Checkpoint `json:"finalized_checkpoint"`
-}
-
 type BeaconBlock struct {
-	Slot       uint64           `json:"slot"`
-	ParentRoot []byte           `json:"parent_root" ssz-size:"32"`
-	StateRoot  []byte           `json:"state_root" ssz-size:"32"`
-	Body       *BeaconBlockBody `json:"body"`
+	Slot          uint64           `json:"slot"`
+	ProposerIndex uint64           `json:"proposer_index"`
+	ParentRoot    []byte           `json:"parent_root" ssz-size:"32"`
+	StateRoot     []byte           `json:"state_root" ssz-size:"32"`
+	Body          *BeaconBlockBody `json:"body"`
 }
 
 type SignedBeaconBlock struct {
@@ -171,7 +142,7 @@ type BeaconBlockBody struct {
 	Eth1Data          *Eth1Data              `json:"eth1_data"`
 	Graffiti          [32]byte               `json:"graffiti"`
 	ProposerSlashings []*ProposerSlashing    `json:"proposer_slashings" ssz-max:"16"`
-	AttesterSlashings []*AttesterSlashing    `json:"attester_slashings" ssz-max:"1"`
+	AttesterSlashings []*AttesterSlashing    `json:"attester_slashings" ssz-max:"2"`
 	Attestations      []*Attestation         `json:"attestations" ssz-max:"128"`
 	Deposits          []*Deposit             `json:"deposits" ssz-max:"16"`
 	VoluntaryExits    []*SignedVoluntaryExit `json:"voluntary_exits" ssz-max:"16"`
@@ -183,10 +154,11 @@ type SignedBeaconBlockHeader struct {
 }
 
 type BeaconBlockHeader struct {
-	Slot       uint64 `json:"slot"`
-	ParentRoot []byte `json:"parent_root" ssz-size:"32"`
-	StateRoot  []byte `json:"state_root" ssz-size:"32"`
-	BodyRoot   []byte `json:"body_root" ssz-size:"32"`
+	Slot          uint64 `json:"slot"`
+	ProposerIndex uint64 `json:"proposer_index"`
+	ParentRoot    []byte `json:"parent_root" ssz-size:"32"`
+	StateRoot     []byte `json:"state_root" ssz-size:"32"`
+	BodyRoot      []byte `json:"body_root" ssz-size:"32"`
 }
 
 type ForkData struct {

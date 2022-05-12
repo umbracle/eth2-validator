@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"encoding/hex"
+	"fmt"
+
 	"github.com/mitchellh/cli"
 	"github.com/umbracle/eth2-validator/internal/testutil"
 )
@@ -41,15 +44,29 @@ func (c *E2EDeployCommand) Run(args []string) int {
 	}
 
 	c.UI.Output("=> Provision beacon node")
-	b, err := testutil.NewLighthouseBeacon(eth1)
+	b, err := testutil.NewTekuBeacon(eth1)
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1
 	}
 
+	key, err := account.Bls.Marshal()
+	if err != nil {
+		c.UI.Error(err.Error())
+		return 1
+	}
+
+	c.UI.Output(hex.EncodeToString(key))
+
 	c.UI.Output("=> Provision validator")
-	testutil.NewLighthouseValidator(account, spec, b)
+	v, err := testutil.NewTekuValidator(account, spec, b)
+	if err != nil {
+		c.UI.Error(err.Error())
+		return 1
+	}
 
 	c.UI.Output("E2E setup done")
+	c.UI.Output(fmt.Sprintf("Beacon node: %s", b.IP()))
+	c.UI.Output(fmt.Sprintf("Validator node: %v", v.IP()))
 	return 0
 }

@@ -11,6 +11,7 @@ type Config struct {
 	Endpoint       string
 	BeaconConfig   *beacon.ChainConfig
 	GrpcAddr       string
+	PrivKey        string
 }
 
 // DefaultConfig returns a default configuration
