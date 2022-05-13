@@ -46,12 +46,18 @@ type nodeOpts struct {
 	NodeClient NodeClient
 }
 
+type exitResult struct {
+	err error
+}
+
 type node struct {
-	cli   *client.Client
-	id    string
-	opts  *nodeOpts
-	ip    string
-	ports map[NodePort]uint64
+	cli        *client.Client
+	id         string
+	opts       *nodeOpts
+	ip         string
+	ports      map[NodePort]uint64
+	waitCh     chan struct{}
+	exitResult *exitResult
 }
 
 type nodeOption func(*nodeOpts)
@@ -217,10 +223,11 @@ func newNode(opts ...nodeOption) (*node, error) {
 	}
 
 	n := &node{
-		cli:   cli,
-		opts:  nOpts,
-		ip:    "127.0.0.1",
-		ports: map[NodePort]uint64{},
+		cli:    cli,
+		opts:   nOpts,
+		ip:     "127.0.0.1",
+		ports:  map[NodePort]uint64{},
+		waitCh: make(chan struct{}),
 	}
 
 	// build CLI arguments which might include template arguments
@@ -260,6 +267,8 @@ func newNode(opts ...nodeOption) (*node, error) {
 		return nil, fmt.Errorf("could not start container: %v", err)
 	}
 
+	go n.run()
+
 	// get the ip of the node if not running as a host network
 	if !nOpts.InHost {
 		containerData, err := cli.ContainerInspect(ctx, n.id)
@@ -279,7 +288,7 @@ func newNode(opts ...nodeOption) (*node, error) {
 	}
 
 	if nOpts.Retry != nil {
-		if err := retryFn(func() error {
+		if err := n.retryFn(func() error {
 			return nOpts.Retry(n)
 		}); err != nil {
 			return nil, err
@@ -344,6 +353,29 @@ func (n *node) execCmd(cmd string) (string, error) {
 	return buf.String(), nil
 }
 
+func (n *node) WaitCh() <-chan struct{} {
+	return n.waitCh
+}
+
+func (n *node) run() {
+	resCh, errCh := n.cli.ContainerWait(context.Background(), n.id, container.WaitConditionNotRunning)
+
+	var exitErr error
+	select {
+	case res := <-resCh:
+		if res.Error != nil {
+			exitErr = fmt.Errorf(res.Error.Message)
+		}
+	case err := <-errCh:
+		exitErr = err
+	}
+
+	n.exitResult = &exitResult{
+		err: exitErr,
+	}
+	close(n.waitCh)
+}
+
 func (n *node) GetAddr(port NodePort) string {
 	num, ok := n.ports[port]
 	if !ok {
@@ -398,7 +430,7 @@ func (n *node) Type() NodeClient {
 	return n.opts.NodeClient
 }
 
-func retryFn(handler func() error) error {
+func (n *node) retryFn(handler func() error) error {
 	timeoutT := time.NewTimer(1 * time.Minute)
 
 	for {
@@ -407,6 +439,9 @@ func retryFn(handler func() error) error {
 			if err := handler(); err == nil {
 				return nil
 			}
+
+		case <-n.waitCh:
+			return fmt.Errorf("node stopped")
 
 		case <-timeoutT.C:
 			return fmt.Errorf("timeout")
@@ -417,4 +452,6 @@ func retryFn(handler func() error) error {
 type Node interface {
 	GetAddr(NodePort) string
 	Type() NodeClient
+	IP() string
+	Stop()
 }

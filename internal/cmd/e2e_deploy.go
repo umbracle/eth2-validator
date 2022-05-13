@@ -44,7 +44,10 @@ func (c *E2EDeployCommand) Run(args []string) int {
 	}
 
 	c.UI.Output("=> Provision beacon node")
-	b, err := testutil.NewTekuBeacon(eth1)
+	bCfg := &testutil.BeaconConfig{
+		Eth1: eth1,
+	}
+	b, err := testutil.NewTekuBeacon(bCfg)
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1
@@ -59,7 +62,12 @@ func (c *E2EDeployCommand) Run(args []string) int {
 	c.UI.Output(hex.EncodeToString(key))
 
 	c.UI.Output("=> Provision validator")
-	v, err := testutil.NewTekuValidator(account, spec, b)
+	vCfg := &testutil.ValidatorConfig{
+		Accounts: []*testutil.Account{account},
+		Spec:     spec,
+		Beacon:   b,
+	}
+	v, err := testutil.NewTekuValidator(vCfg)
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1
