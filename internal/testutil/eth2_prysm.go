@@ -14,7 +14,7 @@ type PrysmBeacon struct {
 }
 
 // NewPrysmBeacon creates a new prysm server
-func NewPrysmBeacon(config *BeaconConfig) (*PrysmBeacon, error) {
+func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 	cmd := []string{
 		"--verbosity", "debug",
 		// eth1x
@@ -45,6 +45,7 @@ func NewPrysmBeacon(config *BeaconConfig) (*PrysmBeacon, error) {
 	}
 	opts := []nodeOption{
 		WithName("prysm-beacon"),
+		WithNodeType(Prysm),
 		WithContainer("gcr.io/prysmaticlabs/prysm/beacon-chain", "v2.0.6"),
 		WithCmd(cmd),
 		WithMount("/data"),
@@ -67,7 +68,7 @@ type PrysmValidator struct {
 
 const defWalletPassword = "qwerty"
 
-func NewPrysmValidator(config *ValidatorConfig /*, account *Account, spec *Eth2Spec, beacon Node*/) (*PrysmValidator, error) {
+func NewPrysmValidator(config *ValidatorConfig) (Node, error) {
 	store := &accountStore{}
 	for _, acct := range config.Accounts {
 		store.AddKey(acct.Bls)
@@ -90,6 +91,7 @@ func NewPrysmValidator(config *ValidatorConfig /*, account *Account, spec *Eth2S
 	}
 	opts := []nodeOption{
 		WithName("prysm-validator"),
+		WithNodeType(Prysm),
 		WithContainer("gcr.io/prysmaticlabs/prysm/validator", "v2.1.0"),
 		WithCmd(cmd),
 		WithMount("/data"),

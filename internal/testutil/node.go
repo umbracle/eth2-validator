@@ -56,7 +56,7 @@ type node struct {
 
 type nodeOption func(*nodeOpts)
 
-func WithNodeClient(nodeClient NodeClient) nodeOption {
+func WithNodeType(nodeClient NodeClient) nodeOption {
 	return func(n *nodeOpts) {
 		n.NodeClient = nodeClient
 	}

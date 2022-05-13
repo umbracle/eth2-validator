@@ -12,7 +12,7 @@ type TekuBeacon struct {
 }
 
 // NewTekuBeacon creates a new teku server
-func NewTekuBeacon(config *BeaconConfig) (*TekuBeacon, error) {
+func NewTekuBeacon(config *BeaconConfig) (Node, error) {
 	cmd := []string{
 		// eth1x
 		"--eth1-endpoint", config.Eth1.GetAddr(NodePortEth1Http),
@@ -31,6 +31,7 @@ func NewTekuBeacon(config *BeaconConfig) (*TekuBeacon, error) {
 	}
 	opts := []nodeOption{
 		WithName("teku-beacon"),
+		WithNodeType(Teku),
 		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
@@ -51,7 +52,7 @@ type TekuValidator struct {
 	*node
 }
 
-func NewTekuValidator(config *ValidatorConfig) (*TekuValidator, error) {
+func NewTekuValidator(config *ValidatorConfig) (Node, error) {
 	cmd := []string{
 		"vc",
 		// beacon api
@@ -67,6 +68,7 @@ func NewTekuValidator(config *ValidatorConfig) (*TekuValidator, error) {
 	}
 	opts := []nodeOption{
 		WithName("teku-validator"),
+		WithNodeType(Teku),
 		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),

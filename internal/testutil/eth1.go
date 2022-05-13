@@ -157,6 +157,23 @@ func (e *Eth1Server) GetDepositContract() *deposit.Deposit {
 	return deposit.NewDeposit(e.deposit, contract.WithJsonRPC(e.Provider().Eth()))
 }
 
+// MakeDeposits deposits the minimum required value to become a validator to multiple accounts
+func (e *Eth1Server) MakeDeposits(accounts []*Account, config *beacon.ChainConfig) error {
+	errCh := make(chan error, len(accounts))
+	for _, acct := range accounts {
+		go func(acct *Account) {
+			errCh <- e.MakeDeposit(acct, config)
+		}(acct)
+	}
+
+	for i := 0; i < len(accounts); i++ {
+		if err := <-errCh; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // MakeDeposit deposits the minimum required value to become a validator
 func (e *Eth1Server) MakeDeposit(account *Account, config *beacon.ChainConfig) error {
 	depositAmount := deposit.MinGweiAmount

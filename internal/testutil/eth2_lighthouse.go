@@ -12,7 +12,7 @@ type LighthouseBeacon struct {
 }
 
 // NewLighthouseBeacon creates a new prysm server
-func NewLighthouseBeacon(config *BeaconConfig) (*LighthouseBeacon, error) {
+func NewLighthouseBeacon(config *BeaconConfig) (Node, error) {
 	cmd := []string{
 		"lighthouse", "beacon_node",
 		"--http", "--http-address", "0.0.0.0",
@@ -23,6 +23,7 @@ func NewLighthouseBeacon(config *BeaconConfig) (*LighthouseBeacon, error) {
 	}
 	opts := []nodeOption{
 		WithName("lighthouse-beacon"),
+		WithNodeType(Lighthouse),
 		WithContainer("sigp/lighthouse", "v2.2.1"),
 		WithCmd(cmd),
 		WithMount("/data"),
@@ -44,7 +45,7 @@ type LighthouseValidator struct {
 	*node
 }
 
-func NewLighthouseValidator(config *ValidatorConfig) (*LighthouseValidator, error) {
+func NewLighthouseValidator(config *ValidatorConfig) (Node, error) {
 	cmd := []string{
 		"lighthouse", "vc",
 		"--debug-level", "debug",
@@ -55,6 +56,7 @@ func NewLighthouseValidator(config *ValidatorConfig) (*LighthouseValidator, erro
 	}
 	opts := []nodeOption{
 		WithName("lighthouse-validator"),
+		WithNodeType(Lighthouse),
 		WithContainer("sigp/lighthouse", "v2.2.1"),
 		WithCmd(cmd),
 		WithMount("/data"),
