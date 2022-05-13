@@ -22,10 +22,19 @@ func TestEth2_Prysm_SingleNode(t *testing.T) {
 	err = eth1.MakeDeposit(account, spec.GetChainConfig())
 	assert.NoError(t, err)
 
-	b, err := NewPrysmBeacon(eth1)
+	bCfg := &BeaconConfig{
+		Spec: spec,
+		Eth1: eth1.node,
+	}
+	b, err := NewPrysmBeacon(bCfg)
 	assert.NoError(t, err)
 
-	NewPrysmValidator(account, spec, b)
+	vCfg := &ValidatorConfig{
+		Accounts: []*Account{account},
+		Spec:     spec,
+		Beacon:   b.node,
+	}
+	NewPrysmValidator(vCfg)
 
 	api := beacon.NewHttpAPI(b.GetAddr(NodePortHttp))
 

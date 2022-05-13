@@ -6,38 +6,11 @@ import (
 	"time"
 
 	"github.com/umbracle/eth2-validator/internal/beacon"
-	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/eth2-validator/internal/deposit"
 	"github.com/umbracle/ethgo"
 	"github.com/umbracle/ethgo/contract"
 	"github.com/umbracle/ethgo/jsonrpc"
-	"github.com/umbracle/ethgo/wallet"
 )
-
-type NodeClient string
-
-const (
-	Teku       NodeClient = "teku"
-	Prysm      NodeClient = "prysm"
-	Lighthouse NodeClient = "lighthouse"
-)
-
-type Account struct {
-	Bls   *bls.Key
-	Ecdsa *wallet.Key
-}
-
-func NewAccount() *Account {
-	key, err := wallet.GenerateKey()
-	if err != nil {
-		panic(fmt.Errorf("BUG: failed to generate key %v", err))
-	}
-	account := &Account{
-		Bls:   bls.NewRandomKey(),
-		Ecdsa: key,
-	}
-	return account
-}
 
 // Eth1Server is an eth1x testutil server using go-ethereum
 type Eth1Server struct {
@@ -222,10 +195,4 @@ func testHTTPEndpoint(endpoint string) error {
 	}
 	defer resp.Body.Close()
 	return nil
-}
-
-type Node interface {
-	IP() string
-	Type() NodeClient
-	GetAddr(NodePort) string
 }

@@ -1,27 +1,23 @@
 package testutil
 
 import (
-	"github.com/umbracle/eth2-validator/internal/beacon"
+	"fmt"
+
 	"github.com/umbracle/eth2-validator/internal/bls"
 )
 
 // TekuBeacon is a teku test server
 type TekuBeacon struct {
 	*node
-	config *beacon.ChainConfig
 }
 
 // NewTekuBeacon creates a new teku server
-func NewTekuBeacon(e *Eth1Server) (*TekuBeacon, error) {
-	testConfig := &Eth2Spec{
-		DepositContract: e.deposit.String(),
-	}
-
+func NewTekuBeacon(config *BeaconConfig) (*TekuBeacon, error) {
 	cmd := []string{
 		// eth1x
-		"--eth1-endpoint", e.GetAddr(NodePortEth1Http),
+		"--eth1-endpoint", config.Eth1.GetAddr(NodePortEth1Http),
 		// eth1x deposit contract
-		"--eth1-deposit-contract-address", e.deposit.String(),
+		"--eth1-deposit-contract-address", config.Spec.DepositContract,
 		// run only beacon node
 		"--rest-api-enabled",
 		// allow requests from anyone
@@ -38,7 +34,7 @@ func NewTekuBeacon(e *Eth1Server) (*TekuBeacon, error) {
 		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
-		WithFile("/data/config.yaml", testConfig),
+		WithFile("/data/config.yaml", config.Spec),
 	}
 
 	node, err := newNode(opts...)
@@ -46,51 +42,48 @@ func NewTekuBeacon(e *Eth1Server) (*TekuBeacon, error) {
 		return nil, err
 	}
 	srv := &TekuBeacon{
-		node:   node,
-		config: testConfig.GetChainConfig(),
+		node: node,
 	}
 	return srv, nil
-}
-
-func (b *TekuBeacon) Stop() {
-
-}
-
-func (b *TekuBeacon) Type() NodeClient {
-	return Teku
 }
 
 type TekuValidator struct {
 	*node
 }
 
-func NewTekuValidator(account *Account, spec *Eth2Spec, beacon Node) (*TekuValidator, error) {
-	keystore, err := bls.ToKeystore(account.Bls, defWalletPassword)
-	if err != nil {
-		return nil, err
-	}
-
+func NewTekuValidator(config *ValidatorConfig) (*TekuValidator, error) {
 	cmd := []string{
 		"vc",
 		// beacon api
-		"--beacon-node-api-endpoint", beacon.GetAddr(NodePortHttp),
+		"--beacon-node-api-endpoint", config.Beacon.GetAddr(NodePortHttp),
 		// data
 		"--data-path", "/data",
 		// eth1x deposit contract (required for custom networks)
-		"--eth1-deposit-contract-address", spec.DepositContract,
+		"--eth1-deposit-contract-address", config.Spec.DepositContract,
 		// config
 		"--network", "/data/config.yaml",
 		// keys
-		"--validator-keys", "/data/wallet/wallet.json:/data/wallet/wallet.txt",
+		"--validator-keys", "/data/keys:/data/pass",
 	}
 	opts := []nodeOption{
 		WithName("teku-validator"),
 		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
-		WithFile("/data/config.yaml", spec),
-		WithFile("/data/wallet/wallet.json", keystore),
-		WithFile("/data/wallet/wallet.txt", defWalletPassword),
+		WithFile("/data/config.yaml", config.Spec),
+	}
+
+	for indx, acct := range config.Accounts {
+		keystore, err := bls.ToKeystore(acct.Bls, defWalletPassword)
+		if err != nil {
+			return nil, err
+		}
+
+		name := fmt.Sprintf("account_%d", indx)
+		opts = append(opts, []nodeOption{
+			WithFile("/data/keys/"+name+".json", keystore),
+			WithFile("/data/pass/"+name+".txt", defWalletPassword),
+		}...)
 	}
 
 	node, err := newNode(opts...)
@@ -98,8 +91,4 @@ func NewTekuValidator(account *Account, spec *Eth2Spec, beacon Node) (*TekuValid
 		return nil, err
 	}
 	return &TekuValidator{node: node}, nil
-}
-
-func (v *TekuValidator) IP() string {
-	return v.node.IP()
 }

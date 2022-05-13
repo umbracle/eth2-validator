@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/ethgo/keystore"
 )
@@ -12,20 +11,15 @@ import (
 // PrysmBeacon is a prysm test server
 type PrysmBeacon struct {
 	*node
-	config *beacon.ChainConfig
 }
 
 // NewPrysmBeacon creates a new prysm server
-func NewPrysmBeacon(e *Eth1Server) (*PrysmBeacon, error) {
-	testConfig := &Eth2Spec{
-		DepositContract: e.deposit.String(),
-	}
-
+func NewPrysmBeacon(config *BeaconConfig) (*PrysmBeacon, error) {
 	cmd := []string{
 		"--verbosity", "debug",
 		// eth1x
-		"--http-web3provider", e.GetAddr(NodePortEth1Http),
-		"--deposit-contract", e.deposit.String(),
+		"--http-web3provider", config.Eth1.GetAddr(NodePortEth1Http),
+		"--deposit-contract", config.Spec.DepositContract,
 		"--contract-deployment-block", "0",
 		"--chain-id", "1337",
 		"--network-id", "1337",
@@ -54,7 +48,7 @@ func NewPrysmBeacon(e *Eth1Server) (*PrysmBeacon, error) {
 		WithContainer("gcr.io/prysmaticlabs/prysm/beacon-chain", "v2.0.6"),
 		WithCmd(cmd),
 		WithMount("/data"),
-		WithFile("/data/config.yaml", testConfig),
+		WithFile("/data/config.yaml", config.Spec),
 	}
 
 	node, err := newNode(opts...)
@@ -62,14 +56,9 @@ func NewPrysmBeacon(e *Eth1Server) (*PrysmBeacon, error) {
 		return nil, err
 	}
 	srv := &PrysmBeacon{
-		node:   node,
-		config: testConfig.GetChainConfig(),
+		node: node,
 	}
 	return srv, nil
-}
-
-func (b *PrysmBeacon) Type() NodeClient {
-	return Prysm
 }
 
 type PrysmValidator struct {
@@ -78,9 +67,11 @@ type PrysmValidator struct {
 
 const defWalletPassword = "qwerty"
 
-func NewPrysmValidator(account *Account, spec *Eth2Spec, beacon Node) (*PrysmValidator, error) {
+func NewPrysmValidator(config *ValidatorConfig /*, account *Account, spec *Eth2Spec, beacon Node*/) (*PrysmValidator, error) {
 	store := &accountStore{}
-	store.AddKey(account.Bls)
+	for _, acct := range config.Accounts {
+		store.AddKey(acct.Bls)
+	}
 
 	keystore, err := store.ToKeystore(defWalletPassword)
 	if err != nil {
@@ -95,7 +86,7 @@ func NewPrysmValidator(account *Account, spec *Eth2Spec, beacon Node) (*PrysmVal
 		"--wallet-dir", "/data",
 		"--wallet-password-file", "/data/wallet-password.txt",
 		// beacon node reference of the GRPC endpoint
-		"--beacon-rpc-provider", strings.TrimPrefix(beacon.GetAddr(NodePortPrysmGrpc), "http://"),
+		"--beacon-rpc-provider", strings.TrimPrefix(config.Beacon.GetAddr(NodePortPrysmGrpc), "http://"),
 	}
 	opts := []nodeOption{
 		WithName("prysm-validator"),

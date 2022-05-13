@@ -23,6 +23,14 @@ import (
 	"github.com/hashicorp/go-hclog"
 )
 
+type NodeClient string
+
+const (
+	Teku       NodeClient = "teku"
+	Prysm      NodeClient = "prysm"
+	Lighthouse NodeClient = "lighthouse"
+)
+
 type nodeOpts struct {
 	Repository string
 	Tag        string
@@ -35,6 +43,7 @@ type nodeOpts struct {
 	Logger     hclog.Logger
 	Output     []io.Writer
 	Labels     map[string]string
+	NodeClient NodeClient
 }
 
 type node struct {
@@ -46,6 +55,12 @@ type node struct {
 }
 
 type nodeOption func(*nodeOpts)
+
+func WithNodeClient(nodeClient NodeClient) nodeOption {
+	return func(n *nodeOpts) {
+		n.NodeClient = nodeClient
+	}
+}
 
 func WithHostNetwork() nodeOption {
 	return func(n *nodeOpts) {
@@ -379,6 +394,10 @@ func (n *node) IP() string {
 	return n.ip
 }
 
+func (n *node) Type() NodeClient {
+	return n.opts.NodeClient
+}
+
 func retryFn(handler func() error) error {
 	timeoutT := time.NewTimer(1 * time.Minute)
 
@@ -393,4 +412,9 @@ func retryFn(handler func() error) error {
 			return fmt.Errorf("timeout")
 		}
 	}
+}
+
+type Node interface {
+	GetAddr(NodePort) string
+	Type() NodeClient
 }

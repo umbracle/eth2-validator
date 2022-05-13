@@ -9,8 +9,6 @@ import (
 )
 
 func TestEth2_Teku_SingleNode(t *testing.T) {
-	t.Skip()
-
 	eth1, err := NewEth1Server()
 	assert.NoError(t, err)
 
@@ -23,10 +21,19 @@ func TestEth2_Teku_SingleNode(t *testing.T) {
 	err = eth1.MakeDeposit(account, spec.GetChainConfig())
 	assert.NoError(t, err)
 
-	b, err := NewTekuBeacon(eth1)
+	bCfg := &BeaconConfig{
+		Spec: spec,
+		Eth1: eth1.node,
+	}
+	b, err := NewTekuBeacon(bCfg)
 	assert.NoError(t, err)
 
-	NewTekuValidator(account, spec, b)
+	vCfg := &ValidatorConfig{
+		Accounts: []*Account{account},
+		Spec:     spec,
+		Beacon:   b.node,
+	}
+	NewTekuValidator(vCfg)
 
 	api := beacon.NewHttpAPI(b.GetAddr(NodePortHttp))
 
