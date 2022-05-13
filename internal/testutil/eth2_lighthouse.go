@@ -23,7 +23,7 @@ func NewLighthouseBeacon(e *Eth1Server) (*LighthouseBeacon, error) {
 		"lighthouse", "beacon_node",
 		"--http", "--http-address", "0.0.0.0",
 		"--http-port", `{{ Port "eth2.http" }}`,
-		"--eth1-endpoints", e.http(),
+		"--eth1-endpoints", e.GetAddr(NodePortEth1Http),
 		"--testnet-dir", "/data",
 		"--http-allow-sync-stalled",
 	}
@@ -52,7 +52,7 @@ func (b *LighthouseBeacon) Type() NodeClient {
 }
 
 type LighthouseValidator struct {
-	node *node
+	*node
 }
 
 func NewLighthouseValidator(account *Account, spec *Eth2Spec, beacon Node) (*LighthouseValidator, error) {

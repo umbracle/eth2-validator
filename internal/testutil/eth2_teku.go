@@ -19,7 +19,7 @@ func NewTekuBeacon(e *Eth1Server) (*TekuBeacon, error) {
 
 	cmd := []string{
 		// eth1x
-		"--eth1-endpoint", e.http(),
+		"--eth1-endpoint", e.GetAddr(NodePortEth1Http),
 		// eth1x deposit contract
 		"--eth1-deposit-contract-address", e.deposit.String(),
 		// run only beacon node
@@ -61,7 +61,7 @@ func (b *TekuBeacon) Type() NodeClient {
 }
 
 type TekuValidator struct {
-	node *node
+	*node
 }
 
 func NewTekuValidator(account *Account, spec *Eth2Spec, beacon Node) (*TekuValidator, error) {

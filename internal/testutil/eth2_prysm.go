@@ -24,7 +24,7 @@ func NewPrysmBeacon(e *Eth1Server) (*PrysmBeacon, error) {
 	cmd := []string{
 		"--verbosity", "debug",
 		// eth1x
-		"--http-web3provider", e.http(),
+		"--http-web3provider", e.GetAddr(NodePortEth1Http),
 		"--deposit-contract", e.deposit.String(),
 		"--contract-deployment-block", "0",
 		"--chain-id", "1337",
@@ -73,7 +73,7 @@ func (b *PrysmBeacon) Type() NodeClient {
 }
 
 type PrysmValidator struct {
-	node *node
+	*node
 }
 
 const defWalletPassword = "qwerty"
