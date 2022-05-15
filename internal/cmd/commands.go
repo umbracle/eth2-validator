@@ -39,6 +39,16 @@ func Commands() map[string]cli.CommandFactory {
 				Meta: meta,
 			}, nil
 		},
+		"duty": func() (cli.Command, error) {
+			return &DutyCommand{
+				UI: ui,
+			}, nil
+		},
+		"duty list": func() (cli.Command, error) {
+			return &DutyListCommand{
+				Meta: meta,
+			}, nil
+		},
 		"e2e": func() (cli.Command, error) {
 			return &E2ECommand{
 				UI: ui,

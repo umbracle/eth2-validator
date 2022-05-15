@@ -5,4 +5,41 @@ package proto;
 option go_package = "/internal/server/proto";
 
 service ValidatorService {
+    rpc ListDuties(ListDutiesRequest) returns (ListDutiesResponse);
+}
+
+message ListDutiesRequest {
+}
+
+message ListDutiesResponse {
+    repeated Duty duties = 1;
+}
+
+message Duty {
+    // pubKey is the public key of the validator that signs the job
+    string pubKey = 1;
+
+    // slot is the slot at which this job was created
+    uint64 slot = 2;
+
+    oneof job {
+        BlockProposal BlockProposal = 3;
+        Attestation Attestation = 4;
+    }
+}
+
+message BlockProposal {
+    string root = 2;
+}
+
+message Attestation {
+    string root = 2;
+
+    Checkpoint source = 3;
+    Checkpoint target = 4;
+
+    message Checkpoint {
+        string root = 1;
+        uint64 epoch = 2;
+    }
 }

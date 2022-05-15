@@ -4,22 +4,22 @@ import (
 	"github.com/mitchellh/cli"
 )
 
-// E2ECommand is the command to show the version of the agent
-type E2ECommand struct {
+// DutyCommand is the command to show the version of the agent
+type DutyCommand struct {
 	UI cli.Ui
 }
 
 // Help implements the cli.Command interface
-func (c *E2ECommand) Help() string {
+func (c *DutyCommand) Help() string {
 	return ""
 }
 
 // Synopsis implements the cli.Command interface
-func (c *E2ECommand) Synopsis() string {
+func (c *DutyCommand) Synopsis() string {
 	return ""
 }
 
 // Run implements the cli.Command interface
-func (c *E2ECommand) Run(args []string) int {
+func (c *DutyCommand) Run(args []string) int {
 	return 0
 }
