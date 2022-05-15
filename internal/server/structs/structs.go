@@ -11,12 +11,10 @@ type Checkpoint struct {
 	Root  [32]byte `json:"root" ssz-size:"32"`
 }
 
-type Slot uint64 // alias from the same package
-
 type Hash [32]byte
 
 type AttestationData struct {
-	Slot            Slot        `json:"slot"`
+	Slot            uint64      `json:"slot"`
 	Index           uint64      `json:"index"`
 	BeaconBlockHash Hash        `json:"beacon_block_root" ssz-size:"32"`
 	Source          *Checkpoint `json:"source"`

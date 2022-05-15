@@ -74,7 +74,7 @@ func (c *E2EDeployCommand) Run(args []string) int {
 	}
 
 	c.UI.Output("E2E setup done")
-	c.UI.Output(fmt.Sprintf("Beacon node: %s", b.IP()))
+	c.UI.Output(fmt.Sprintf("Beacon node: %s", b.GetAddr(testutil.NodePortHttp)))
 	c.UI.Output(fmt.Sprintf("Validator node: %v", v.IP()))
 	return 0
 }

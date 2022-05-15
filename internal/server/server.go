@@ -13,15 +13,15 @@ import (
 	"github.com/umbracle/eth2-validator/internal/bitlist"
 	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
+	"github.com/umbracle/eth2-validator/internal/server/state"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"google.golang.org/grpc"
 )
 
 // Server is a validator in the eth2.0 network
 type Server struct {
-	proto.UnimplementedValidatorServiceServer
-
 	config     *Config
+	state      *state.State
 	logger     hclog.Logger
 	shutdownCh chan struct{}
 	client     *beacon.HttpAPI
@@ -42,6 +42,12 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 		logger:     logger,
 		shutdownCh: make(chan struct{}),
 	}
+
+	state, err := state.NewState("TODO")
+	if err != nil {
+		return nil, fmt.Errorf("failed to start state: %v", err)
+	}
+	v.state = state
 
 	if err := v.setupGRPCServer(config.GrpcAddr); err != nil {
 		return nil, err
@@ -157,8 +163,28 @@ func (v *Server) runAttestation(duty *beacon.AttesterDuty) error {
 		AggregationBits: bitlist,
 		Signature:       attestedSignature,
 	}
-
 	if err := v.client.PublishAttestations([]*structs.Attestation{attestation}); err != nil {
+		return err
+	}
+
+	// store the attestation in the state
+	job := &proto.Duty{
+		PubKey: "pubkey",
+		Slot:   attestationData.Slot,
+		Job: &proto.Duty_Attestation{
+			Attestation: &proto.Attestation{
+				Source: &proto.Attestation_Checkpoint{
+					Root:  hex.EncodeToString(attestationData.Source.Root[:]),
+					Epoch: attestationData.Source.Epoch,
+				},
+				Target: &proto.Attestation_Checkpoint{
+					Root:  hex.EncodeToString(attestationData.Target.Root[:]),
+					Epoch: attestationData.Target.Epoch,
+				},
+			},
+		},
+	}
+	if v.state.InsertDuty(job); err != nil {
 		return err
 	}
 	return nil
@@ -193,6 +219,20 @@ func (v *Server) runDuty(update *dutyUpdates) error {
 	}
 
 	if err := v.client.PublishSignedBlock(signedBlock); err != nil {
+		return err
+	}
+
+	// save the proposed block in the state
+	job := &proto.Duty{
+		PubKey: "pubkey",
+		Slot:   update.slot,
+		Job: &proto.Duty_BlockProposal{
+			BlockProposal: &proto.BlockProposal{
+				Root: hex.EncodeToString(block.StateRoot),
+			},
+		},
+	}
+	if err := v.state.InsertDuty(job); err != nil {
 		return err
 	}
 	return nil
@@ -310,6 +350,10 @@ EPOCH:
 
 // Stop stops the validator
 func (v *Server) Stop() {
+	if err := v.state.Close(); err != nil {
+		v.logger.Error("failed to stop state", "err", err)
+	}
+	v.grpcServer.Stop()
 	close(v.shutdownCh)
 }
 
@@ -318,7 +362,7 @@ func (s *Server) setupGRPCServer(addr string) error {
 		return nil
 	}
 	s.grpcServer = grpc.NewServer(s.withLoggingUnaryInterceptor())
-	proto.RegisterValidatorServiceServer(s.grpcServer, s)
+	proto.RegisterValidatorServiceServer(s.grpcServer, &service{srv: s})
 
 	lis, err := net.Listen("tcp", addr)
 	if err != nil {

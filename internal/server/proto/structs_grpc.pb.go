@@ -3,7 +3,10 @@
 package proto
 
 import (
+	context "context"
 	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 )
 
 // This is a compile-time assertion to ensure that this generated file
@@ -15,6 +18,7 @@ const _ = grpc.SupportPackageIsVersion7
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type ValidatorServiceClient interface {
+	ListDuties(ctx context.Context, in *ListDutiesRequest, opts ...grpc.CallOption) (*ListDutiesResponse, error)
 }
 
 type validatorServiceClient struct {
@@ -25,10 +29,20 @@ func NewValidatorServiceClient(cc grpc.ClientConnInterface) ValidatorServiceClie
 	return &validatorServiceClient{cc}
 }
 
+func (c *validatorServiceClient) ListDuties(ctx context.Context, in *ListDutiesRequest, opts ...grpc.CallOption) (*ListDutiesResponse, error) {
+	out := new(ListDutiesResponse)
+	err := c.cc.Invoke(ctx, "/proto.ValidatorService/ListDuties", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ValidatorServiceServer is the server API for ValidatorService service.
 // All implementations must embed UnimplementedValidatorServiceServer
 // for forward compatibility
 type ValidatorServiceServer interface {
+	ListDuties(context.Context, *ListDutiesRequest) (*ListDutiesResponse, error)
 	mustEmbedUnimplementedValidatorServiceServer()
 }
 
@@ -36,6 +50,9 @@ type ValidatorServiceServer interface {
 type UnimplementedValidatorServiceServer struct {
 }
 
+func (UnimplementedValidatorServiceServer) ListDuties(context.Context, *ListDutiesRequest) (*ListDutiesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListDuties not implemented")
+}
 func (UnimplementedValidatorServiceServer) mustEmbedUnimplementedValidatorServiceServer() {}
 
 // UnsafeValidatorServiceServer may be embedded to opt out of forward compatibility for this service.
@@ -49,13 +66,36 @@ func RegisterValidatorServiceServer(s grpc.ServiceRegistrar, srv ValidatorServic
 	s.RegisterService(&ValidatorService_ServiceDesc, srv)
 }
 
+func _ValidatorService_ListDuties_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDutiesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ValidatorServiceServer).ListDuties(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.ValidatorService/ListDuties",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ValidatorServiceServer).ListDuties(ctx, req.(*ListDutiesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ValidatorService_ServiceDesc is the grpc.ServiceDesc for ValidatorService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var ValidatorService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "proto.ValidatorService",
 	HandlerType: (*ValidatorServiceServer)(nil),
-	Methods:     []grpc.MethodDesc{},
-	Streams:     []grpc.StreamDesc{},
-	Metadata:    "internal/server/proto/structs.proto",
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListDuties",
+			Handler:    _ValidatorService_ListDuties_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "internal/server/proto/structs.proto",
 }

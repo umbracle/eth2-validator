@@ -2,24 +2,59 @@ package state
 
 import (
 	"github.com/boltdb/bolt"
+	"github.com/hashicorp/go-memdb"
+	"github.com/umbracle/eth2-validator/internal/server/proto"
 )
 
 // State is the entity that stores the state of the validator
 type State struct {
-	db *bolt.DB
+	db    *bolt.DB
+	memdb *memdb.MemDB
 }
 
-func NewState() *State {
-	db, err := bolt.Open("my.db", 0600, nil)
+func NewState(path string) (*State, error) {
+	db, err := bolt.Open("/tmp/bolt.db", 0600, nil) // TODO
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
+
+	memdb, err := memdb.NewMemDB(schema)
+	if err != nil {
+		return nil, err
+	}
+
 	state := &State{
-		db: db,
+		db:    db,
+		memdb: memdb,
 	}
-	return state
+	return state, nil
 }
 
-func (s *State) Close() {
-	s.db.Close()
+func (s *State) Close() error {
+	return s.db.Close()
+}
+
+func (s *State) InsertDuty(duty *proto.Duty) error {
+	txn := s.memdb.Txn(true)
+	defer txn.Abort()
+
+	if err := txn.Insert(dutiesTable, duty); err != nil {
+		return err
+	}
+
+	txn.Commit()
+	return nil
+}
+
+func (s *State) JobsList(ws memdb.WatchSet) (memdb.ResultIterator, error) {
+	txn := s.memdb.Txn(false)
+	defer txn.Abort()
+
+	iter, err := txn.Get(dutiesTable, "id")
+	if err != nil {
+		return nil, err
+	}
+
+	ws.Add(iter.WatchCh())
+	return iter, nil
 }
