@@ -6,38 +6,11 @@ import (
 	"time"
 
 	"github.com/umbracle/eth2-validator/internal/beacon"
-	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/eth2-validator/internal/deposit"
 	"github.com/umbracle/ethgo"
 	"github.com/umbracle/ethgo/contract"
 	"github.com/umbracle/ethgo/jsonrpc"
-	"github.com/umbracle/ethgo/wallet"
 )
-
-type NodeClient string
-
-const (
-	Teku       NodeClient = "teku"
-	Prysm      NodeClient = "prysm"
-	Lighthouse NodeClient = "lighthouse"
-)
-
-type Account struct {
-	Bls   *bls.Key
-	Ecdsa *wallet.Key
-}
-
-func NewAccount() *Account {
-	key, err := wallet.GenerateKey()
-	if err != nil {
-		panic(fmt.Errorf("BUG: failed to generate key %v", err))
-	}
-	account := &Account{
-		Bls:   bls.NewRandomKey(),
-		Ecdsa: key,
-	}
-	return account
-}
 
 // Eth1Server is an eth1x testutil server using go-ethereum
 type Eth1Server struct {
@@ -184,6 +157,23 @@ func (e *Eth1Server) GetDepositContract() *deposit.Deposit {
 	return deposit.NewDeposit(e.deposit, contract.WithJsonRPC(e.Provider().Eth()))
 }
 
+// MakeDeposits deposits the minimum required value to become a validator to multiple accounts
+func (e *Eth1Server) MakeDeposits(accounts []*Account, config *beacon.ChainConfig) error {
+	errCh := make(chan error, len(accounts))
+	for _, acct := range accounts {
+		go func(acct *Account) {
+			errCh <- e.MakeDeposit(acct, config)
+		}(acct)
+	}
+
+	for i := 0; i < len(accounts); i++ {
+		if err := <-errCh; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // MakeDeposit deposits the minimum required value to become a validator
 func (e *Eth1Server) MakeDeposit(account *Account, config *beacon.ChainConfig) error {
 	depositAmount := deposit.MinGweiAmount
@@ -222,10 +212,4 @@ func testHTTPEndpoint(endpoint string) error {
 	}
 	defer resp.Body.Close()
 	return nil
-}
-
-type Node interface {
-	IP() string
-	Type() NodeClient
-	GetAddr(NodePort) string
 }
