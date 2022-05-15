@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -27,62 +26,63 @@ type codecTree interface {
 	GetTree() (*ssz.Node, error)
 }
 
-type testCallback func() codec
+type fork string
+
+const (
+	phase0Fork = "phase0"
+	altairFork = "altair"
+)
+
+type testCallback func(f fork) codec
 
 var codecs = map[string]testCallback{
-	"AttestationData":         func() codec { return new(AttestationData) },
-	"Checkpoint":              func() codec { return new(Checkpoint) },
-	"AggregateAndProof":       func() codec { return new(AggregateAndProof) },
-	"Attestation":             func() codec { return new(Attestation) },
-	"AttesterSlashing":        func() codec { return new(AttesterSlashing) },
-	"BeaconBlock":             func() codec { return new(BeaconBlock) },
-	"BeaconBlockBody":         func() codec { return new(BeaconBlockBody) },
-	"BeaconBlockHeader":       func() codec { return new(BeaconBlockHeader) },
-	"Deposit":                 func() codec { return new(Deposit) },
-	"DepositData":             func() codec { return new(DepositData) },
-	"DepositMessage":          func() codec { return new(DepositMessage) },
-	"Eth1Data":                func() codec { return new(Eth1Data) },
-	"Fork":                    func() codec { return new(Fork) },
-	"HistoricalBatch":         func() codec { return new(HistoricalBatch) },
-	"IndexedAttestation":      func() codec { return new(IndexedAttestation) },
-	"PendingAttestation":      func() codec { return new(PendingAttestation) },
-	"ProposerSlashing":        func() codec { return new(ProposerSlashing) },
-	"SignedBeaconBlock":       func() codec { return new(SignedBeaconBlock) },
-	"SignedBeaconBlockHeader": func() codec { return new(SignedBeaconBlockHeader) },
-	"SignedVoluntaryExit":     func() codec { return new(SignedVoluntaryExit) },
-	"SigningRoot":             func() codec { return new(SigningRoot) },
-	"Validator":               func() codec { return new(Validator) },
-	"VoluntaryExit":           func() codec { return new(VoluntaryExit) },
-}
-
-func TestSpecMinimal(t *testing.T) {
-	files := readDir(t, filepath.Join(testsPath, "/minimal/phase0/ssz_static"))
-	for _, f := range files {
-		spl := strings.Split(f, "/")
-		name := spl[len(spl)-1]
-
-		base, ok := codecs[name]
-		if !ok {
-			continue
+	"AttestationData":   func(f fork) codec { return new(AttestationData) },
+	"Checkpoint":        func(f fork) codec { return new(Checkpoint) },
+	"AggregateAndProof": func(f fork) codec { return new(AggregateAndProof) },
+	"Attestation":       func(f fork) codec { return new(Attestation) },
+	"AttesterSlashing":  func(f fork) codec { return new(AttesterSlashing) },
+	"BeaconBlock": func(f fork) codec {
+		if f == altairFork {
+			return new(BeaconBlockAltair)
 		}
-
-		t.Run(name, func(t *testing.T) {
-			for _, f := range walkPath(t, f) {
-				checkSSZEncoding(t, f, name, base)
-			}
-		})
-	}
+		return new(BeaconBlock)
+	},
+	"BeaconBlockBody": func(f fork) codec {
+		if f == altairFork {
+			return new(BeaconBlockBodyAltair)
+		}
+		return new(BeaconBlockBody)
+	},
+	"BeaconBlockHeader":  func(f fork) codec { return new(BeaconBlockHeader) },
+	"Deposit":            func(f fork) codec { return new(Deposit) },
+	"DepositData":        func(f fork) codec { return new(DepositData) },
+	"DepositMessage":     func(f fork) codec { return new(DepositMessage) },
+	"Eth1Data":           func(f fork) codec { return new(Eth1Data) },
+	"Fork":               func(f fork) codec { return new(Fork) },
+	"IndexedAttestation": func(f fork) codec { return new(IndexedAttestation) },
+	"PendingAttestation": func(f fork) codec { return new(PendingAttestation) },
+	"ProposerSlashing":   func(f fork) codec { return new(ProposerSlashing) },
+	"SignedBeaconBlock": func(f fork) codec {
+		if f == altairFork {
+			return new(SignedBeaconBlockAltair)
+		}
+		return new(SignedBeaconBlock)
+	},
+	"SignedBeaconBlockHeader": func(f fork) codec { return new(SignedBeaconBlockHeader) },
+	"SignedVoluntaryExit":     func(f fork) codec { return new(SignedVoluntaryExit) },
+	"SigningRoot":             func(f fork) codec { return new(SigningRoot) },
+	"Validator":               func(f fork) codec { return new(Validator) },
+	"VoluntaryExit":           func(f fork) codec { return new(VoluntaryExit) },
+	"SyncCommittee":           func(f fork) codec { return new(SyncCommittee) },
+	"SyncAggregate":           func(f fork) codec { return new(SyncAggregate) },
 }
 
-func TestSpecMainnet(t *testing.T) {
+func TestSpecMainnet_Phase0(t *testing.T) {
 	files := readDir(t, filepath.Join(testsPath, "/mainnet/phase0/ssz_static"))
 	for _, f := range files {
 		spl := strings.Split(f, "/")
 		name := spl[len(spl)-1]
 
-		if name == "BeaconState" || name == "HistoricalBatch" {
-			continue
-		}
 		base, ok := codecs[name]
 		if !ok {
 			continue
@@ -91,7 +91,27 @@ func TestSpecMainnet(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			files := readDir(t, filepath.Join(f, "ssz_random"))
 			for _, f := range files {
-				checkSSZEncoding(t, f, name, base)
+				checkSSZEncoding(t, phase0Fork, f, name, base)
+			}
+		})
+	}
+}
+
+func TestSpecMainnet_Altair(t *testing.T) {
+	files := readDir(t, filepath.Join(testsPath, "/mainnet/altair/ssz_static"))
+	for _, f := range files {
+		spl := strings.Split(f, "/")
+		name := spl[len(spl)-1]
+
+		base, ok := codecs[name]
+		if !ok {
+			continue
+		}
+
+		t.Run(name, func(t *testing.T) {
+			files := readDir(t, filepath.Join(f, "ssz_random"))
+			for _, f := range files {
+				checkSSZEncoding(t, altairFork, f, name, base)
 			}
 		})
 	}
@@ -102,8 +122,8 @@ func formatSpecFailure(errHeader, specFile, structName string, err error) string
 		errHeader, specFile, structName, err)
 }
 
-func checkSSZEncoding(t *testing.T, fileName, structName string, base testCallback) {
-	obj := base()
+func checkSSZEncoding(t *testing.T, f fork, fileName, structName string, base testCallback) {
+	obj := base(f)
 	output := readValidGenericSSZ(t, fileName, &obj)
 
 	// Marshal
@@ -116,7 +136,7 @@ func checkSSZEncoding(t *testing.T, fileName, structName string, base testCallba
 	}
 
 	// Unmarshal
-	obj2 := base()
+	obj2 := base(f)
 	if err := obj2.UnmarshalSSZ(res); err != nil {
 		t.Fatal(formatSpecFailure("UnmarshalSSZ error", fileName, structName, err))
 	}
@@ -153,22 +173,6 @@ const (
 	valueFile      = "value.yaml"
 	rootsFile      = "roots.yaml"
 )
-
-func walkPath(t *testing.T, path string) (res []string) {
-	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() && strings.Contains(path, "case_") {
-			res = append(res, path)
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	return
-}
 
 func readDir(t *testing.T, path string) []string {
 	files, err := ioutil.ReadDir(path)

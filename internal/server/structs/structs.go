@@ -99,11 +99,6 @@ type SigningRoot struct {
 	Domain     []byte `json:"domain" ssz-size:"8"`
 }
 
-type HistoricalBatch struct {
-	BlockRoots [64][32]byte `json:"block_roots" ssz-size:"64"`
-	StateRoots [][]byte     `json:"state_roots" ssz-size:"64,32"`
-}
-
 type ProposerSlashing struct {
 	Header1 *SignedBeaconBlockHeader `json:"signed_header_1"`
 	Header2 *SignedBeaconBlockHeader `json:"signed_header_2"`
@@ -169,4 +164,41 @@ type ForkData struct {
 type SigningData struct {
 	ObjectRoot []byte `ssz-size:"32"`
 	Domain     []byte `ssz-size:"32"`
+}
+
+// Altair fork
+
+type SignedBeaconBlockAltair struct {
+	Block     *BeaconBlockAltair `json:"message"`
+	Signature []byte             `json:"signature" ssz-size:"96"`
+}
+
+type BeaconBlockAltair struct {
+	Slot          uint64                 `json:"slot"`
+	ProposerIndex uint64                 `json:"proposer_index"`
+	ParentRoot    []byte                 `json:"parent_root" ssz-size:"32"`
+	StateRoot     []byte                 `json:"state_root" ssz-size:"32"`
+	Body          *BeaconBlockBodyAltair `json:"body"`
+}
+
+type BeaconBlockBodyAltair struct {
+	RandaoReveal      []byte                 `json:"randao_reveal" ssz-size:"96"`
+	Eth1Data          *Eth1Data              `json:"eth1_data"`
+	Graffiti          [32]byte               `json:"graffiti"`
+	ProposerSlashings []*ProposerSlashing    `json:"proposer_slashings" ssz-max:"16"`
+	AttesterSlashings []*AttesterSlashing    `json:"attester_slashings" ssz-max:"2"`
+	Attestations      []*Attestation         `json:"attestations" ssz-max:"128"`
+	Deposits          []*Deposit             `json:"deposits" ssz-max:"16"`
+	VoluntaryExits    []*SignedVoluntaryExit `json:"voluntary_exits" ssz-max:"16"`
+	SyncAggregate     *SyncAggregate         `json:"sync_aggregate"`
+}
+
+type SyncAggregate struct {
+	SyncCommiteeBits      []byte   `json:"sync_committee_bits" ssz-size:"64"`
+	SyncCommiteeSignature [96]byte `json:"sync_committee_signature" ssz-size:"96"`
+}
+
+type SyncCommittee struct {
+	PubKeys         [][]byte `json:"pubkeys" ssz-size:"512,48"`
+	AggregatePubKey [48]byte `json:"aggregate_pubkey"`
 }
