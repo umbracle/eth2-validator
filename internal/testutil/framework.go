@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
+	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"github.com/umbracle/ethgo/wallet"
 )
 
@@ -59,6 +60,12 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 
 	spec := &Eth2Spec{
 		DepositContract: eth1.deposit.String(),
+		Forks: Forks{
+			Altair: ForkSpec{
+				Epoch:   2,
+				Version: structs.Domain{0x2, 0x0, 0x0, 0x0},
+			},
+		},
 	}
 
 	accounts := NewAccounts(1)
@@ -90,7 +97,8 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 		if syncing.IsSyncing {
 			return false
 		}
-		if syncing.HeadSlot < 2 {
+		if syncing.HeadSlot < 40 {
+			// give it enough time to fork to altair and bellatrix
 			return false
 		}
 		return true
