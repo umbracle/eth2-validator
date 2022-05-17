@@ -36,6 +36,7 @@ func NewTekuBeacon(config *BeaconConfig) (Node, error) {
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/config.yaml", config.Spec),
+		WithUser("0:0"),
 	}
 
 	node, err := newNode(opts...)
