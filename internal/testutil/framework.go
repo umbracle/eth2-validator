@@ -78,7 +78,8 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 		Spec:     spec,
 		Beacon:   b,
 	}
-	validatorFn(vCfg)
+	v, err := validatorFn(vCfg)
+	require.NoError(t, err)
 
 	api := beacon.NewHttpAPI(b.GetAddr(NodePortHttp))
 
@@ -95,4 +96,9 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 		}
 		return true
 	}, 2*time.Minute, 10*time.Second)
+
+	fmt.Println("// beacon //")
+	fmt.Println(b.(*node).GetLogs())
+	fmt.Println("// validator //")
+	fmt.Println(v.(*node).GetLogs())
 }
