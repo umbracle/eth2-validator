@@ -5,7 +5,7 @@ go 1.18
 require (
 	github.com/boltdb/bolt v1.3.1
 	github.com/docker/docker v20.10.15+incompatible
-	github.com/ferranbt/fastssz v0.0.0-20210817104241-ab271261c6d9
+	github.com/ferranbt/fastssz v0.1.1-0.20220516150120-780dd73bc6d5
 	github.com/golang/protobuf v1.5.0
 	github.com/golang/snappy v0.0.4
 	github.com/google/gops v0.3.10
