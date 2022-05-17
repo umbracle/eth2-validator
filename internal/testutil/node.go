@@ -244,7 +244,8 @@ func newNode(opts ...nodeOption) (*node, error) {
 		Image:  imageName,
 		Cmd:    strslice.StrSlice(cmdArgs),
 		Labels: nOpts.Labels,
-		User:   "0:0",
+		// Require to run Teku https://github.com/ConsenSys/teku/issues/2869
+		User: "0:0",
 	}
 	hostConfig := &container.HostConfig{
 		Binds: []string{},
