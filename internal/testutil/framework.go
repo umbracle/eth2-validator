@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
@@ -83,7 +84,7 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 
 	api := beacon.NewHttpAPI(b.GetAddr(NodePortHttp))
 
-	require.Eventually(t, func() bool {
+	assert.Eventually(t, func() bool {
 		syncing, err := api.Syncing()
 		if err != nil {
 			return false
