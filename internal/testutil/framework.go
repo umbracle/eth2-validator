@@ -99,7 +99,7 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 	}, 2*time.Minute, 10*time.Second)
 
 	fmt.Println("// beacon //")
-	fmt.Println(b.(*node).GetLogs())
+	fmt.Println(b.(*TekuBeacon).GetLogs())
 	fmt.Println("// validator //")
-	fmt.Println(v.(*node).GetLogs())
+	fmt.Println(v.(*TekuValidator).GetLogs())
 }
