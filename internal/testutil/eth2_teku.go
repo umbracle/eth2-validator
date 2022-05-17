@@ -74,6 +74,7 @@ func NewTekuValidator(config *ValidatorConfig) (Node, error) {
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/config.yaml", config.Spec),
+		WithUser("0:0"),
 	}
 
 	for indx, acct := range config.Accounts {
