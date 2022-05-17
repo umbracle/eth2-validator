@@ -244,6 +244,7 @@ func newNode(opts ...nodeOption) (*node, error) {
 		Image:  imageName,
 		Cmd:    strslice.StrSlice(cmdArgs),
 		Labels: nOpts.Labels,
+		User:   "0:0",
 	}
 	hostConfig := &container.HostConfig{
 		Binds: []string{},
