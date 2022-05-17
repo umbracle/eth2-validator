@@ -1,6 +1,6 @@
 
 fastssz:
-	go run ../../ferranbt/fastssz/sszgen/*.go --path internal/server/structs/structs.go --include ./internal/bls,./internal/bitlist
+	sszgen --path internal/server/structs/structs.go --include ./internal/bls,./internal/bitlist
 
 fix-bls-import:
 	# go mod vendor does not import c static files used in herumi
@@ -10,7 +10,7 @@ build-docker:
 	docker build -t beacon .
 
 get-spec-tests:
-	./scripts/download-spec-tests.sh v1.1.0
+	./scripts/download-spec-tests.sh v1.1.10
 
 protoc:
 	protoc --go_out=. --go-grpc_out=. ./internal/server/proto/*.proto
