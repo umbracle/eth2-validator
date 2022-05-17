@@ -44,6 +44,7 @@ type nodeOpts struct {
 	Output     []io.Writer
 	Labels     map[string]string
 	NodeClient NodeClient
+	User       string
 }
 
 type exitResult struct {
@@ -116,6 +117,12 @@ func WithLabels(m map[string]string) nodeOption {
 		for k, v := range m {
 			n.Labels[k] = v
 		}
+	}
+}
+
+func WithUser(user string) nodeOption {
+	return func(n *nodeOpts) {
+		n.User = user
 	}
 }
 
@@ -244,6 +251,7 @@ func newNode(opts ...nodeOption) (*node, error) {
 		Image:  imageName,
 		Cmd:    strslice.StrSlice(cmdArgs),
 		Labels: nOpts.Labels,
+		User:   nOpts.User,
 	}
 	hostConfig := &container.HostConfig{
 		Binds: []string{},
