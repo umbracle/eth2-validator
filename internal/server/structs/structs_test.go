@@ -29,8 +29,9 @@ type codecTree interface {
 type fork string
 
 const (
-	phase0Fork = "phase0"
-	altairFork = "altair"
+	phase0Fork    = "phase0"
+	altairFork    = "altair"
+	bellatrixFork = "bellatrix"
 )
 
 type testCallback func(f fork) codec
@@ -42,16 +43,22 @@ var codecs = map[string]testCallback{
 	"Attestation":       func(f fork) codec { return new(Attestation) },
 	"AttesterSlashing":  func(f fork) codec { return new(AttesterSlashing) },
 	"BeaconBlock": func(f fork) codec {
-		if f == altairFork {
+		if f == phase0Fork {
+			return new(BeaconBlock)
+		} else if f == altairFork {
 			return new(BeaconBlockAltair)
 		}
-		return new(BeaconBlock)
+		return nil
 	},
 	"BeaconBlockBody": func(f fork) codec {
-		if f == altairFork {
+		if f == phase0Fork {
+			return new(BeaconBlockBody)
+		} else if f == altairFork {
 			return new(BeaconBlockBodyAltair)
+		} else if f == bellatrixFork {
+			return new(BeaconBlockBodyBellatrix)
 		}
-		return new(BeaconBlockBody)
+		return nil
 	},
 	"BeaconBlockHeader":  func(f fork) codec { return new(BeaconBlockHeader) },
 	"Deposit":            func(f fork) codec { return new(Deposit) },
@@ -63,10 +70,12 @@ var codecs = map[string]testCallback{
 	"PendingAttestation": func(f fork) codec { return new(PendingAttestation) },
 	"ProposerSlashing":   func(f fork) codec { return new(ProposerSlashing) },
 	"SignedBeaconBlock": func(f fork) codec {
-		if f == altairFork {
+		if f == phase0Fork {
+			return new(SignedBeaconBlock)
+		} else if f == altairFork {
 			return new(SignedBeaconBlockAltair)
 		}
-		return new(SignedBeaconBlock)
+		return nil
 	},
 	"SignedBeaconBlockHeader": func(f fork) codec { return new(SignedBeaconBlockHeader) },
 	"SignedVoluntaryExit":     func(f fork) codec { return new(SignedVoluntaryExit) },
@@ -77,8 +86,8 @@ var codecs = map[string]testCallback{
 	"SyncAggregate":           func(f fork) codec { return new(SyncAggregate) },
 }
 
-func TestSpecMainnet_Phase0(t *testing.T) {
-	files := readDir(t, filepath.Join(testsPath, "/mainnet/phase0/ssz_static"))
+func testFork(t *testing.T, fork fork) {
+	files := readDir(t, filepath.Join(testsPath, "/mainnet/"+string(fork)+"/ssz_static"))
 	for _, f := range files {
 		spl := strings.Split(f, "/")
 		name := spl[len(spl)-1]
@@ -91,30 +100,22 @@ func TestSpecMainnet_Phase0(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			files := readDir(t, filepath.Join(f, "ssz_random"))
 			for _, f := range files {
-				checkSSZEncoding(t, phase0Fork, f, name, base)
+				checkSSZEncoding(t, fork, f, name, base)
 			}
 		})
 	}
 }
 
+func TestSpecMainnet_Phase0(t *testing.T) {
+	testFork(t, phase0Fork)
+}
+
 func TestSpecMainnet_Altair(t *testing.T) {
-	files := readDir(t, filepath.Join(testsPath, "/mainnet/altair/ssz_static"))
-	for _, f := range files {
-		spl := strings.Split(f, "/")
-		name := spl[len(spl)-1]
+	testFork(t, altairFork)
+}
 
-		base, ok := codecs[name]
-		if !ok {
-			continue
-		}
-
-		t.Run(name, func(t *testing.T) {
-			files := readDir(t, filepath.Join(f, "ssz_random"))
-			for _, f := range files {
-				checkSSZEncoding(t, altairFork, f, name, base)
-			}
-		})
-	}
+func TestSpecMainnet_Bellatrix(t *testing.T) {
+	testFork(t, bellatrixFork)
 }
 
 func formatSpecFailure(errHeader, specFile, structName string, err error) string {
@@ -124,6 +125,10 @@ func formatSpecFailure(errHeader, specFile, structName string, err error) string
 
 func checkSSZEncoding(t *testing.T, f fork, fileName, structName string, base testCallback) {
 	obj := base(f)
+	if obj == nil {
+		// skip
+		return
+	}
 	output := readValidGenericSSZ(t, fileName, &obj)
 
 	// Marshal

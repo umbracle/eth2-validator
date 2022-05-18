@@ -133,7 +133,7 @@ type Transfer struct {
 type BeaconBlockBody struct {
 	RandaoReveal      []byte                 `json:"randao_reveal" ssz-size:"96"`
 	Eth1Data          *Eth1Data              `json:"eth1_data"`
-	Graffiti          [32]byte               `json:"graffiti"`
+	Graffiti          [32]byte               `json:"graffiti" ssz-size:"32"`
 	ProposerSlashings []*ProposerSlashing    `json:"proposer_slashings" ssz-max:"16"`
 	AttesterSlashings []*AttesterSlashing    `json:"attester_slashings" ssz-max:"2"`
 	Attestations      []*Attestation         `json:"attestations" ssz-max:"128"`
@@ -182,7 +182,7 @@ type BeaconBlockAltair struct {
 type BeaconBlockBodyAltair struct {
 	RandaoReveal      []byte                 `json:"randao_reveal" ssz-size:"96"`
 	Eth1Data          *Eth1Data              `json:"eth1_data"`
-	Graffiti          [32]byte               `json:"graffiti"`
+	Graffiti          [32]byte               `json:"graffiti" ssz-size:"32"`
 	ProposerSlashings []*ProposerSlashing    `json:"proposer_slashings" ssz-max:"16"`
 	AttesterSlashings []*AttesterSlashing    `json:"attester_slashings" ssz-max:"2"`
 	Attestations      []*Attestation         `json:"attestations" ssz-max:"128"`
@@ -198,5 +198,37 @@ type SyncAggregate struct {
 
 type SyncCommittee struct {
 	PubKeys         [][]byte `json:"pubkeys" ssz-size:"512,48"`
-	AggregatePubKey [48]byte `json:"aggregate_pubkey"`
+	AggregatePubKey [48]byte `json:"aggregate_pubkey" ssz-size:"48"`
+}
+
+// bellatrix
+
+type BeaconBlockBodyBellatrix struct {
+	RandaoReveal      []byte                 `json:"randao_reveal" ssz-size:"96"`
+	Eth1Data          *Eth1Data              `json:"eth1_data"`
+	Graffiti          [32]byte               `json:"graffiti" ssz-size:"32"`
+	ProposerSlashings []*ProposerSlashing    `json:"proposer_slashings" ssz-max:"16"`
+	AttesterSlashings []*AttesterSlashing    `json:"attester_slashings" ssz-max:"2"`
+	Attestations      []*Attestation         `json:"attestations" ssz-max:"128"`
+	Deposits          []*Deposit             `json:"deposits" ssz-max:"16"`
+	VoluntaryExits    []*SignedVoluntaryExit `json:"voluntary_exits" ssz-max:"16"`
+	SyncAggregate     *SyncAggregate         `json:"sync_aggregate"`
+	ExecutionPayload  *ExecutionPayload      `json:"execution_payload"`
+}
+
+type ExecutionPayload struct {
+	ParentHash    [32]byte  `ssz-size:"32" json:"parent_hash"`
+	FeeRecipient  [20]byte  `ssz-size:"20" json:"fee_recipient"`
+	StateRoot     [32]byte  `ssz-size:"32" json:"state_root"`
+	ReceiptsRoot  [32]byte  `ssz-size:"32" json:"receipts_root"`
+	LogsBloom     [256]byte `ssz-size:"256" json:"logs_bloom"`
+	PrevRandao    [32]byte  `ssz-size:"32" json:"prev_randao"`
+	BlockNumber   uint64    `json:"block_number"`
+	GasLimit      uint64    `json:"gas_limit"`
+	GasUsed       uint64    `json:"gas_used"`
+	Timestamp     uint64    `json:"timestamp"`
+	ExtraData     []byte    `ssz-max:"32" json:"extra_data"`
+	BaseFeePerGas [32]byte  `ssz-size:"32" json:"base_fee_per_gas"`
+	BlockHash     [32]byte  `ssz-size:"32" json:"block_hash"`
+	Transactions  [][]byte  `ssz-max:"1048576,1073741824" ssz-size:"?,?" json:"transactions"`
 }

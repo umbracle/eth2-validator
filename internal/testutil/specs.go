@@ -97,7 +97,7 @@ func (e *Eth2Spec) buildConfig() []byte {
 		e.SlotsPerEpoch = 12 // default 32 slots
 	}
 	if e.SecondsPerSlot == 0 {
-		e.SecondsPerSlot = 2 // default 12 seconds
+		e.SecondsPerSlot = 3 // default 12 seconds
 	}
 
 	// init forks

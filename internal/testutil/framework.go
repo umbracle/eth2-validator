@@ -97,8 +97,8 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 		if syncing.IsSyncing {
 			return false
 		}
-		if syncing.HeadSlot < 40 {
-			// give it enough time to fork to altair and bellatrix
+		if syncing.HeadSlot <= uint64(spec.SlotsPerEpoch) {
+			// wait at least for one epoch
 			return false
 		}
 		return true
