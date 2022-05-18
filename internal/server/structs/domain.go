@@ -27,3 +27,7 @@ func (d *Domain) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	copy(d[:], buf)
 	return nil
 }
+
+func (d Domain) MarshalText() ([]byte, error) {
+	return []byte("0x" + hex.EncodeToString(d[:])), nil
+}

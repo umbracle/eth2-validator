@@ -3,6 +3,7 @@ package testutil
 import (
 	"bytes"
 	"embed"
+	"encoding"
 	"encoding/hex"
 	"fmt"
 	"html/template"
@@ -12,6 +13,7 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 	"github.com/mitchellh/mapstructure"
 	"github.com/umbracle/eth2-validator/internal/beacon"
+	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"gopkg.in/yaml.v2"
 )
 
@@ -33,6 +35,27 @@ type Eth2Spec struct {
 	SlotsPerEpoch             int
 	SecondsPerSlot            int
 	DepositContract           string
+	Forks                     Forks
+}
+
+type Forks struct {
+	Altair    ForkSpec
+	Bellatrix ForkSpec
+}
+
+type ForkSpec struct {
+	Version structs.Domain
+	Epoch   uint64
+}
+
+func (f *ForkSpec) init() {
+	if f.Epoch != 0 {
+		// already set
+		return
+	}
+	// set default to not reachable ever
+	f.Epoch = 18446744073709551615
+	f.Version = structs.Domain{}
 }
 
 func (e *Eth2Spec) GetChainConfig() *beacon.ChainConfig {
@@ -76,7 +99,30 @@ func (e *Eth2Spec) buildConfig() []byte {
 	if e.SecondsPerSlot == 0 {
 		e.SecondsPerSlot = 3 // default 12 seconds
 	}
-	tmpl, err := template.ParseFS(res, "fixtures/config.yaml.tmpl")
+
+	// init forks
+	e.Forks.Altair.init()
+	e.Forks.Bellatrix.init()
+
+	funcMap := template.FuncMap{
+		"marshal": func(obj interface{}) string {
+			enc, ok := obj.(encoding.TextMarshaler)
+			if !ok {
+				panic("expected an encoding.TextMarshaler obj")
+			}
+			res, err := enc.MarshalText()
+			if err != nil {
+				panic(err)
+			}
+			return string(res)
+		},
+	}
+
+	tmplFile, err := res.ReadFile("fixtures/config.yaml.tmpl")
+	if err != nil {
+		panic("file not found")
+	}
+	tmpl, err := template.New("name").Funcs(funcMap).Parse(string(tmplFile))
 	if err != nil {
 		panic(fmt.Sprintf("BUG: Failed to load eth2 config template: %v", err))
 	}
