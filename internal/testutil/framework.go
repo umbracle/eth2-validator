@@ -59,6 +59,7 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 
 	spec := &Eth2Spec{
 		DepositContract: eth1.deposit.String(),
+		SlotsPerEpoch:   12,
 	}
 
 	accounts := NewAccounts(1)
@@ -90,7 +91,8 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 		if syncing.IsSyncing {
 			return false
 		}
-		if syncing.HeadSlot < 2 {
+		if syncing.HeadSlot <= uint64(spec.SlotsPerEpoch) {
+			// wait at least for one epoch
 			return false
 		}
 		return true
