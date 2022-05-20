@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/mitchellh/cli"
+	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"github.com/umbracle/eth2-validator/internal/testutil"
 )
 
@@ -35,6 +36,12 @@ func (c *E2EDeployCommand) Run(args []string) int {
 	account := testutil.NewAccount()
 	spec := &testutil.Eth2Spec{
 		DepositContract: eth1.Deposit().String(),
+		Forks: testutil.Forks{
+			Altair: testutil.ForkSpec{
+				Epoch:   1000,
+				Version: structs.Domain{0x2, 0x0, 0x0, 0x0},
+			},
+		},
 	}
 
 	c.UI.Output("=> Deploy deposit")
@@ -46,6 +53,7 @@ func (c *E2EDeployCommand) Run(args []string) int {
 	c.UI.Output("=> Provision beacon node")
 	bCfg := &testutil.BeaconConfig{
 		Eth1: eth1,
+		Spec: spec,
 	}
 	b, err := testutil.NewTekuBeacon(bCfg)
 	if err != nil {

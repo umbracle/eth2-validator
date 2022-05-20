@@ -103,18 +103,19 @@ func (v *Server) run() {
 		select {
 		case update := <-dutyUpdates:
 
+			blockSlotSig, err := v.runDuty(update)
+			if err != nil {
+				v.logger.Error("failed to propose block: %v", err)
+			} else {
+				v.logger.Info("block proposed successfully", "slot", update.slot)
+			}
+
 			if update.attester != nil {
-				if err := v.runAttestation(update.attester[0]); err != nil {
+				if err := v.runAttestation(update.attester[0], blockSlotSig); err != nil {
 					v.logger.Error("failed to send attestation", "err", err)
 				} else {
 					v.logger.Info("attestation proposed successfully", "slot", update.slot)
 				}
-			}
-
-			if err := v.runDuty(update); err != nil {
-				v.logger.Error("failed to propose block: %v", err)
-			} else {
-				v.logger.Info("block proposed successfully", "slot", update.slot)
 			}
 
 		case <-v.shutdownCh:
@@ -131,7 +132,15 @@ func uint64SSZ(epoch uint64) *ssz.Hasher {
 	return hh
 }
 
-func (v *Server) runAttestation(duty *beacon.AttesterDuty) error {
+func signatureSSZ(sig []byte) *ssz.Hasher {
+	hh := ssz.NewHasher()
+	indx := hh.Index()
+	hh.PutBytes(sig)
+	hh.Merkleize(indx)
+	return hh
+}
+
+func (v *Server) runAttestation(duty *beacon.AttesterDuty, blockSlotSig []byte) error {
 	// TODO: hardcoded
 	time.Sleep(1 * time.Second)
 
@@ -187,31 +196,88 @@ func (v *Server) runAttestation(duty *beacon.AttesterDuty) error {
 	if v.state.InsertDuty(job); err != nil {
 		return err
 	}
+
+	// wait another second to aggregate
+	time.Sleep(1 * time.Second)
+
+	attestationRoot, err := attestationData.HashTreeRoot()
+	if err != nil {
+		panic(err)
+	}
+
+	{
+		aggregateAttestation, err := v.client.AggregateAttestation(duty.Slot, attestationRoot)
+		if err != nil {
+			panic(err)
+		}
+
+		// Sign the aggregate attestation.
+		aggregateAndProof := &structs.AggregateAndProof{
+			Index:          uint64(duty.ValidatorIndex),
+			Aggregate:      aggregateAttestation,
+			SelectionProof: blockSlotSig,
+		}
+		aggregateAndProofRoot, err := aggregateAndProof.HashTreeRoot()
+		if err != nil {
+			panic(err)
+		}
+
+		hh := signatureSSZ(aggregateAndProofRoot[:])
+		aggregateAndProofRootSignature, err := v.signHash(v.config.BeaconConfig.DomainAggregateAndProof, hh)
+		if err != nil {
+			return err
+		}
+
+		req := []*beacon.SignedAggregateAndProof{
+			{
+				Message:   aggregateAndProof,
+				Signature: aggregateAndProofRootSignature,
+			},
+		}
+		if err := v.client.PublishAggregateAndProof(req); err != nil {
+			return err
+		}
+
+		// insert the job on the state
+		aggregateJob := &proto.Duty{
+			PubKey: "pubkey",
+			Slot:   attestationData.Slot,
+			Job: &proto.Duty_AttestationAggregate{
+				AttestationAggregate: &proto.AttestationAggregate{},
+			},
+		}
+		if v.state.InsertDuty(aggregateJob); err != nil {
+			return err
+		}
+	}
+
+	v.logger.Info("attestation aggregated")
+
 	return nil
 }
 
-func (v *Server) runDuty(update *dutyUpdates) error {
+func (v *Server) runDuty(update *dutyUpdates) ([]byte, error) {
 	// create the randao
 
 	epochSSZ := uint64SSZ(update.epoch)
 	randaoReveal, err := v.signHash(v.config.BeaconConfig.DomainRandao, epochSSZ)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	block, err := v.client.GetBlock(update.slot, randaoReveal)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	hh := ssz.NewHasher()
 	if err := block.HashTreeRootWith(hh); err != nil {
-		return err
+		return nil, err
 	}
 
 	blockSignature, err := v.signHash(v.config.BeaconConfig.DomainBeaconProposer, hh)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	signedBlock := &structs.SignedBeaconBlock{
 		Block:     block,
@@ -219,7 +285,7 @@ func (v *Server) runDuty(update *dutyUpdates) error {
 	}
 
 	if err := v.client.PublishSignedBlock(signedBlock); err != nil {
-		return err
+		return nil, err
 	}
 
 	// save the proposed block in the state
@@ -233,9 +299,9 @@ func (v *Server) runDuty(update *dutyUpdates) error {
 		},
 	}
 	if err := v.state.InsertDuty(job); err != nil {
-		return err
+		return nil, err
 	}
-	return nil
+	return blockSignature, nil
 }
 
 func (v *Server) signHash(domain structs.Domain, obj *ssz.Hasher) ([]byte, error) {
