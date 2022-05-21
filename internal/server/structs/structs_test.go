@@ -68,9 +68,7 @@ var codecs = map[string]testCallback{
 	"PendingAttestation": func(f fork) codec { return new(PendingAttestation) },
 	"ProposerSlashing":   func(f fork) codec { return new(ProposerSlashing) },
 	"SignedBeaconBlock": func(f fork) codec {
-		if f == phase0Fork {
-			return new(SignedBeaconBlock)
-		} else if f == altairFork {
+		if f == altairFork {
 			return new(SignedBeaconBlockAltair)
 		}
 		return nil
