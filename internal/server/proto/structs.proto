@@ -25,6 +25,7 @@ message Duty {
     oneof job {
         BlockProposal BlockProposal = 3;
         Attestation Attestation = 4;
+        AttestationAggregate AttestationAggregate = 5;
     }
 }
 
@@ -42,4 +43,7 @@ message Attestation {
         string root = 1;
         uint64 epoch = 2;
     }
+}
+
+message AttestationAggregate {
 }

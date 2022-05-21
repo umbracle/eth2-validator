@@ -247,3 +247,19 @@ func (h *HttpAPI) PublishAttestations(data []*structs.Attestation) error {
 	err := h.post("/eth/v1/beacon/pool/attestations", data, nil)
 	return err
 }
+
+func (h *HttpAPI) AggregateAttestation(slot uint64, root [32]byte) (*structs.Attestation, error) {
+	var out *structs.Attestation
+	err := h.get(fmt.Sprintf("/eth/v1/validator/aggregate_attestation?slot=%d&attestation_data_root=0x%s", slot, hex.EncodeToString(root[:])), &out)
+	return out, err
+}
+
+type SignedAggregateAndProof struct {
+	Message   *structs.AggregateAndProof `json:"message"`
+	Signature []byte                     `json:"signature" ssz-size:"96"`
+}
+
+func (h *HttpAPI) PublishAggregateAndProof(data []*SignedAggregateAndProof) error {
+	err := h.post("/eth/v1/validator/aggregate_and_proofs", data, nil)
+	return err
+}
