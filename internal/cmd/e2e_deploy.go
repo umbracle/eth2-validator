@@ -38,7 +38,7 @@ func (c *E2EDeployCommand) Run(args []string) int {
 		DepositContract: eth1.Deposit().String(),
 		Forks: testutil.Forks{
 			Altair: testutil.ForkSpec{
-				Epoch:   1000,
+				Epoch:   1,
 				Version: structs.Domain{0x2, 0x0, 0x0, 0x0},
 			},
 		},

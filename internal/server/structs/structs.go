@@ -108,11 +108,11 @@ type AttesterSlashing struct {
 }
 
 type BeaconBlock struct {
-	Slot          uint64           `json:"slot"`
-	ProposerIndex uint64           `json:"proposer_index"`
-	ParentRoot    []byte           `json:"parent_root" ssz-size:"32"`
-	StateRoot     []byte           `json:"state_root" ssz-size:"32"`
-	Body          *BeaconBlockBody `json:"body"`
+	Slot          uint64                 `json:"slot"`
+	ProposerIndex uint64                 `json:"proposer_index"`
+	ParentRoot    []byte                 `json:"parent_root" ssz-size:"32"`
+	StateRoot     []byte                 `json:"state_root" ssz-size:"32"`
+	Body          *BeaconBlockBodyAltair `json:"body"`
 }
 
 type SignedBeaconBlock struct {

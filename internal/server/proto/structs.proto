@@ -26,6 +26,7 @@ message Duty {
         BlockProposal BlockProposal = 3;
         Attestation Attestation = 4;
         AttestationAggregate AttestationAggregate = 5;
+        SyncCommittee SyncCommittee = 6;
     }
 }
 
@@ -46,4 +47,7 @@ message Attestation {
 }
 
 message AttestationAggregate {
+}
+
+message SyncCommittee {
 }
