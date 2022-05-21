@@ -1,5 +1,7 @@
 name: Unit tests
 on: [push, pull_request]
+env:
+  CGO_CFLAGS: "-O -D__BLST_PORTABLE__"
 jobs:
   build:
     runs-on: ubuntu-latest
