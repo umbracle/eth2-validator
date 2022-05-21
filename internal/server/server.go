@@ -54,6 +54,7 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 	}
 
 	v.client = beacon.NewHttpAPI(config.Endpoint)
+	v.client.SetLogger(logger)
 
 	if err := v.addValidator(config.PrivKey); err != nil {
 		return nil, fmt.Errorf("failed to start validator %v", err)
@@ -88,10 +89,11 @@ func (v *Server) addValidator(privKey string) error {
 }
 
 type dutyUpdates struct {
-	epoch    uint64
-	slot     uint64
-	attester []*beacon.AttesterDuty
-	proposer []*beacon.ProposerDuty // start here
+	epoch     uint64
+	slot      uint64
+	attester  []*beacon.AttesterDuty
+	proposer  []*beacon.ProposerDuty // start here
+	committee []*beacon.CommitteeSyncDuty
 }
 
 func (v *Server) run() {
@@ -108,6 +110,17 @@ func (v *Server) run() {
 				v.logger.Error("failed to propose block: %v", err)
 			} else {
 				v.logger.Info("block proposed successfully", "slot", update.slot)
+			}
+
+			if update.committee != nil {
+				// no info required since there is only one validator
+				go func() {
+					if err := v.runSyncCommittee(update.slot); err != nil {
+						v.logger.Error("failed to send sync commitee", "err", err)
+					} else {
+						v.logger.Info("sync committee successfully", "slot", update.slot)
+					}
+				}()
 			}
 
 			if update.attester != nil {
@@ -138,6 +151,49 @@ func signatureSSZ(sig []byte) *ssz.Hasher {
 	hh.PutBytes(sig)
 	hh.Merkleize(indx)
 	return hh
+}
+
+func (v *Server) runSyncCommittee(slot uint64) error {
+	// TODO: hardcoded
+	time.Sleep(1 * time.Second)
+
+	// get root
+	latestRoot, err := v.client.GetHeadBlockRoot()
+	if err != nil {
+		return err
+	}
+
+	hh := signatureSSZ(latestRoot)
+	signature, err := v.signHash(v.config.BeaconConfig.DomainSyncCommittee, hh)
+	if err != nil {
+		return err
+	}
+
+	committeeDuty := []*beacon.SyncCommitteeMessage{
+		{
+			Slot:           slot,
+			BlockRoot:      latestRoot,
+			ValidatorIndex: 0,
+			Signature:      signature,
+		},
+	}
+
+	if err := v.client.SubmitCommitteeDuties(committeeDuty); err != nil {
+		return err
+	}
+
+	// store the attestation in the state
+	job := &proto.Duty{
+		PubKey: "pubkey",
+		Slot:   slot,
+		Job: &proto.Duty_SyncCommittee{
+			SyncCommittee: &proto.SyncCommittee{},
+		},
+	}
+	if v.state.InsertDuty(job); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (v *Server) runAttestation(duty *beacon.AttesterDuty, blockSlotSig []byte) error {
@@ -310,7 +366,7 @@ func (v *Server) signHash(domain structs.Domain, obj *ssz.Hasher) ([]byte, error
 		return nil, err
 	}
 
-	ddd, err := v.config.BeaconConfig.ComputeDomain(domain, nil, genesis.Root)
+	ddd, err := v.config.BeaconConfig.ComputeDomain(domain, v.config.BeaconConfig.AltairForkVersion[:], genesis.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -375,6 +431,10 @@ EPOCH:
 	if err != nil {
 		panic(err)
 	}
+	committeeDuties, err := v.client.GetCommitteeSyncDuties(epoch, []string{"0"})
+	if err != nil {
+		panic(err)
+	}
 
 	for {
 		select {
@@ -396,10 +456,11 @@ EPOCH:
 			}
 
 			job := &dutyUpdates{
-				epoch:    epoch,
-				slot:     slot,
-				attester: slotAttester,
-				proposer: slotProposer,
+				epoch:     epoch,
+				slot:      slot,
+				attester:  slotAttester,
+				proposer:  slotProposer,
+				committee: committeeDuties,
 			}
 			updates <- job
 

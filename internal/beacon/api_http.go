@@ -212,6 +212,18 @@ func (h *HttpAPI) GetCommitteeSyncDuties(epoch uint64, indexes []string) ([]*Com
 	return out, err
 }
 
+type SyncCommitteeMessage struct {
+	Slot           uint64 `json:"slot"`
+	BlockRoot      []byte `json:"beacon_block_root"`
+	ValidatorIndex uint64 `json:"validator_index"`
+	Signature      []byte `json:"signature"`
+}
+
+func (h *HttpAPI) SubmitCommitteeDuties(duties []*SyncCommitteeMessage) error {
+	err := h.post("/eth/v1/beacon/pool/sync_committees", duties, nil)
+	return err
+}
+
 type Validator struct {
 	Index  uint64 `json:"index"`
 	Status string `json:"status"`
@@ -262,4 +274,12 @@ type SignedAggregateAndProof struct {
 func (h *HttpAPI) PublishAggregateAndProof(data []*SignedAggregateAndProof) error {
 	err := h.post("/eth/v1/validator/aggregate_and_proofs", data, nil)
 	return err
+}
+
+func (h *HttpAPI) GetHeadBlockRoot() ([]byte, error) {
+	var data struct {
+		Root []byte
+	}
+	err := h.get("/eth/v1/beacon/blocks/head/root", &data)
+	return data.Root, err
 }

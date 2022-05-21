@@ -110,9 +110,16 @@ type ChainConfig struct {
 	DomainVoluntaryExit     structs.Domain `yaml:"DOMAIN_VOLUNTARY_EXIT"`      // DomainVoluntaryExit defines the BLS signature domain for exit verification.
 	DomainSelectionProof    structs.Domain `yaml:"DOMAIN_SELECTION_PROOF"`     // DomainSelectionProof defines the BLS signature domain for selection proof.
 	DomainAggregateAndProof structs.Domain `yaml:"DOMAIN_AGGREGATE_AND_PROOF"` // DomainAggregateAndProof defines the BLS signature domain for aggregate and proof.
+	DomainSyncCommittee     structs.Domain `yaml:"DOMAIN_SYNC_COMMITTEE"`
 
 	// Fork values
 	GenesisForkVersion structs.Domain `yaml:"GENESIS_FORK_VERSION"` // GenesisForkVersion is used to track fork version between state transitions.
+
+	AltairForkVersion structs.Domain `yaml:"ALTAIR_FORK_VERSION"`
+	AltairForkEpoch   uint64         `yaml:"ALTAIR_FORK_EPOCH"`
+
+	BellatrixForkVersion structs.Domain `yaml:"BELLATRIX_FORK_VERSION"`
+	BellatrixForkEpoch   uint64         `yaml:"BELLATRIX_FORK_EPOCH"`
 }
 
 var zeroHash = make([]byte, 32)
