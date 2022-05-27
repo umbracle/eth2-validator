@@ -10,8 +10,9 @@ var (
 )
 
 type Bootnode struct {
-	Enr  string
-	node *node
+	*node
+
+	Enr string
 }
 
 func NewBootnode() (*Bootnode, error) {
@@ -25,14 +26,22 @@ func NewBootnode() (*Bootnode, error) {
 			// not found
 			return "", fmt.Errorf("not found")
 		} else {
-			return match[1], nil
+			return "enr:" + match[1], nil
 		}
+	}
+
+	cmd := []string{
+		"--debug",
+		"--external-ip", "127.0.0.1",
+		"--discv5-port", "3000",
 	}
 
 	nodeENR := ""
 	opts := []nodeOption{
 		WithName("bootnode"),
+		WithCmd(cmd),
 		WithContainer("gcr.io/prysmaticlabs/prysm/bootnode", "latest"),
+		WithHostNetwork(),
 		WithRetry(func(n *node) error {
 			enr, err := decodeEnr(n)
 			if err != nil {
