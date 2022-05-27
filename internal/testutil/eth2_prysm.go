@@ -26,8 +26,6 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 		// these sync fields have to be disabled for single node
 		"--min-sync-peers", "0",
 		"--disable-sync",
-		// do not connect with any peers
-		"--no-discovery",
 		// grpc endpoint
 		"--rpc-host", "0.0.0.0",
 		"--rpc-port", `{{ Port "eth2.prysm.grpc" }}`,
@@ -42,6 +40,8 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 		"--datadir", "/data/eth2",
 		"--e2e-config",
 		"--force-clear-db",
+		// other
+		"--minimum-peers-per-subnet", "0",
 	}
 	opts := []nodeOption{
 		WithName("prysm-beacon"),
@@ -88,6 +88,8 @@ func NewPrysmValidator(config *ValidatorConfig) (Node, error) {
 		"--wallet-password-file", "/data/wallet-password.txt",
 		// beacon node reference of the GRPC endpoint
 		"--beacon-rpc-provider", strings.TrimPrefix(config.Beacon.GetAddr(NodePortPrysmGrpc), "http://"),
+		// config
+		"--chain-config-file", "/data/config.yaml",
 	}
 	opts := []nodeOption{
 		WithName("prysm-validator"),
@@ -97,6 +99,7 @@ func NewPrysmValidator(config *ValidatorConfig) (Node, error) {
 		WithMount("/data"),
 		WithFile("/data/direct/accounts/all-accounts.keystore.json", keystore),
 		WithFile("/data/wallet-password.txt", defWalletPassword),
+		WithFile("/data/config.yaml", config.Spec),
 	}
 
 	node, err := newNode(opts...)
