@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"reflect"
 	"strings"
+	"time"
 
 	ssz "github.com/ferranbt/fastssz"
 	"github.com/mitchellh/mapstructure"
@@ -78,8 +79,11 @@ func (e *Eth2Spec) buildConfig() []byte {
 	if e.GenesisDelay == 0 {
 		e.GenesisDelay = 10 // second
 	}
+	if e.MinGenesisTime == 0 {
+		e.MinGenesisTime = time.Now().Second()
+	}
 	if e.EthFollowDistance == 0 {
-		e.EthFollowDistance = 10 // blocks
+		e.EthFollowDistance = 1 // blocks
 	}
 	if e.SecondsPerEth1Block == 0 {
 		e.SecondsPerEth1Block = 1 // second

@@ -296,7 +296,7 @@ func newNode(opts ...nodeOption) (*node, error) {
 	}
 
 	if nOpts.Retry != nil {
-		if err := n.retryFn(func() error {
+		if err := n.retryFn(defaultTimeoutDuration, func() error {
 			return nOpts.Retry(n)
 		}); err != nil {
 			return nil, err
@@ -342,9 +342,13 @@ func (n *node) execCmd(cmd string) (string, error) {
 			if !ok {
 				panic(fmt.Sprintf("Port '%s' not found", name))
 			}
-
-			relPort := atomic.AddUint64(port, 1)
-			n.ports[name] = relPort
+			var relPort uint64
+			if foundPort, ok := n.ports[name]; ok {
+				relPort = foundPort
+			} else {
+				relPort = atomic.AddUint64(port, 1)
+				n.ports[name] = relPort
+			}
 			return fmt.Sprintf("%d", relPort)
 		},
 	})
@@ -438,8 +442,10 @@ func (n *node) Type() NodeClient {
 	return n.opts.NodeClient
 }
 
-func (n *node) retryFn(handler func() error) error {
-	timeoutT := time.NewTimer(1 * time.Minute)
+var defaultTimeoutDuration = 1 * time.Minute
+
+func (n *node) retryFn(timeout time.Duration, handler func() error) error {
+	timeoutT := time.NewTimer(timeout)
 
 	for {
 		select {
