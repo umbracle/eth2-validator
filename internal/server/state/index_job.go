@@ -18,18 +18,7 @@ func (idx *IndexJob) FromObject(obj interface{}) (bool, []byte, error) {
 		return false, nil, fmt.Errorf("bad")
 	}
 
-	var typ proto.DutyType
-	switch elem.Job.(type) {
-	case *proto.Duty_Attestation:
-		typ = proto.DutyAttestation
-
-	case *proto.Duty_BlockProposal:
-		typ = proto.DutyBlockProposal
-
-	default:
-		return false, nil, fmt.Errorf("not expected")
-	}
-
+	typ := elem.Type()
 	return true, []byte(typ), nil
 }
 

@@ -36,8 +36,8 @@ func TestState_InsertDuty(t *testing.T) {
 	state := newTestState(t)
 
 	duty1 := &proto.Duty{
-		PubKey: "pub1",
-		Slot:   1,
+		Id:   "a",
+		Slot: 1,
 		Job: &proto.Duty_BlockProposal{
 			BlockProposal: &proto.BlockProposal{
 				Root: "abc",
@@ -48,7 +48,7 @@ func TestState_InsertDuty(t *testing.T) {
 	assert.NoError(t, err)
 
 	duty2 := &proto.Duty{
-		PubKey: "pub1",
+		Id: "b",
 		Job: &proto.Duty_Attestation{
 			Attestation: &proto.Attestation{
 				Root: "def",
@@ -59,11 +59,15 @@ func TestState_InsertDuty(t *testing.T) {
 	assert.NoError(t, err)
 
 	ws := memdb.NewWatchSet()
-	iter, err := state.JobsList(ws)
+	iter, err := state.DutiesList(ws)
 	assert.NoError(t, err)
 
 	// return two results
 	assert.NotNil(t, iter.Next())
 	assert.NotNil(t, iter.Next())
 	assert.Nil(t, iter.Next())
+
+	found, err := state.DutyByID("b")
+	assert.Nil(t, err)
+	assert.Equal(t, found.Id, "b")
 }
