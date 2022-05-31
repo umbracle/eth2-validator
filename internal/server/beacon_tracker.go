@@ -10,17 +10,19 @@ type beaconTracker struct {
 	logger         hclog.Logger
 	genesisTime    time.Time
 	secondsPerSlot uint64
+	slotsPerEpoch  uint64
 	resCh          chan SlotResult
 	closeCh        chan struct{}
 	readyCh        chan struct{}
-	startSlot      uint64
+	startEpoch     uint64
 }
 
-func newBeaconTracker(logger hclog.Logger, genesisTime time.Time, secondsPerSlot uint64) *beaconTracker {
+func newBeaconTracker(logger hclog.Logger, genesisTime time.Time, secondsPerSlot, slotsPerEpoch uint64) *beaconTracker {
 	return &beaconTracker{
 		logger:         logger.Named("tracker"),
 		genesisTime:    genesisTime,
 		secondsPerSlot: secondsPerSlot,
+		slotsPerEpoch:  slotsPerEpoch,
 		readyCh:        make(chan struct{}),
 		closeCh:        make(chan struct{}),
 		resCh:          make(chan SlotResult),
@@ -28,11 +30,25 @@ func newBeaconTracker(logger hclog.Logger, genesisTime time.Time, secondsPerSlot
 }
 
 type SlotResult struct {
-	Slot uint64
+	Epoch          uint64
+	StartTime      time.Time
+	GenesisTime    time.Time
+	SecondsPerSlot uint64
+
+	FirstSlot uint64
+	LastSlot  uint64
+}
+
+func (s *SlotResult) AtSlot(slot uint64) time.Time {
+	return s.GenesisTime.Add(time.Duration(slot*s.SecondsPerSlot) * time.Second)
+}
+
+func (s *SlotResult) AtSlotAndStage(slot uint64) time.Time {
+	return s.GenesisTime.Add(time.Duration(slot*s.SecondsPerSlot) * time.Second)
 }
 
 func (b *beaconTracker) run() {
-	secondsPerSlot := time.Duration(b.secondsPerSlot) * time.Second
+	secondsPerEpoch := time.Duration(b.secondsPerSlot*b.slotsPerEpoch) * time.Second
 
 	// time since genesis
 	currentTime := now()
@@ -50,15 +66,33 @@ func (b *beaconTracker) run() {
 		}
 	}
 
-	nextTick := timeSinceGenesis.Truncate(secondsPerSlot) + secondsPerSlot
-	slot := uint64(nextTick / secondsPerSlot)
+	nextTick := timeSinceGenesis.Truncate(secondsPerEpoch) + secondsPerEpoch
+	epoch := uint64(nextTick / secondsPerEpoch)
 	nextTickTime := b.genesisTime.Add(nextTick)
 
-	b.startSlot = slot
+	b.startEpoch = epoch
 
 	// close the ready channel to notify that the
 	// chain has started
 	close(b.readyCh)
+
+	emitEpoch := func(epoch uint64) {
+		startTime := b.genesisTime.Add(time.Duration(epoch*b.slotsPerEpoch*b.secondsPerSlot) * time.Second)
+
+		firstSlot := epoch * b.slotsPerEpoch
+		lastSlot := epoch*b.slotsPerEpoch + b.slotsPerEpoch
+
+		b.resCh <- SlotResult{
+			Epoch:          epoch,
+			StartTime:      startTime,
+			SecondsPerSlot: b.secondsPerSlot,
+			GenesisTime:    b.genesisTime,
+			FirstSlot:      firstSlot,
+			LastSlot:       lastSlot,
+		}
+	}
+
+	emitEpoch(epoch - 1)
 
 	for {
 		timeToWait := nextTickTime.Sub(now())
@@ -69,12 +103,10 @@ func (b *beaconTracker) run() {
 		case <-b.closeCh:
 			return
 		}
-		b.resCh <- SlotResult{
-			Slot: slot,
-		}
 
-		slot++
-		nextTickTime = nextTickTime.Add(secondsPerSlot)
+		emitEpoch(epoch)
+		epoch++
+		nextTickTime = nextTickTime.Add(secondsPerEpoch)
 	}
 }
 

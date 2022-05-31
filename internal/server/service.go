@@ -15,7 +15,7 @@ type service struct {
 
 func (s *service) ListDuties(ctx context.Context, req *proto.ListDutiesRequest) (*proto.ListDutiesResponse, error) {
 	ws := memdb.NewWatchSet()
-	iter, err := s.srv.state.JobsList(ws)
+	iter, err := s.srv.state.DutiesList(ws)
 	if err != nil {
 		return nil, err
 	}
