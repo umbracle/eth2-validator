@@ -13,13 +13,11 @@ import (
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bitlist"
 	"github.com/umbracle/eth2-validator/internal/bls"
+	"github.com/umbracle/eth2-validator/internal/scheduler"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/server/state"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
-	"github.com/umbracle/eth2-validator/internal/uuid"
 	"google.golang.org/grpc"
-	"google.golang.org/protobuf/types/known/anypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // Server is a validator in the eth2.0 network
@@ -389,6 +387,34 @@ func (v *Server) signHash(domain structs.Domain, obj *ssz.Hasher) ([]byte, error
 	return signature, nil
 }
 
+func (v *Server) Sign(domain proto.DomainType, account uint64, root []byte) ([]byte, error) {
+	genesis, err := v.client.Genesis(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	domainVal := domainTypToDomain(domain, v.config.BeaconConfig)
+
+	ddd, err := v.config.BeaconConfig.ComputeDomain(domainVal, v.config.BeaconConfig.AltairForkVersion[:], genesis.Root)
+	if err != nil {
+		return nil, err
+	}
+
+	rootToSign, err := ssz.HashWithDefaultHasher(&structs.SigningData{
+		ObjectRoot: root,
+		Domain:     ddd,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	signature, err := v.validator.key.Sign(rootToSign)
+	if err != nil {
+		return nil, err
+	}
+	return signature, nil
+}
+
 func (v *Server) getEpoch(slot uint64) uint64 {
 	return slot / v.config.BeaconConfig.SlotsPerEpoch
 }
@@ -436,88 +462,21 @@ func (v *Server) watchDuties() {
 				panic(err)
 			}
 
-			proposalDutiesBySlot := map[uint64]*proto.Duty{}
-
-			var dirtyDuties []*proto.Duty
-			for _, proposal := range proposerDuties {
-				timeToStart := res.AtSlot(proposal.Slot)
-
-				proposalDuty := &proto.Duty{
-					Id:         uuid.Generate(),
-					Slot:       proposal.Slot,
-					Epoch:      res.Epoch,
-					ActiveTime: timestamppb.New(timeToStart),
-					Job:        &proto.Duty_BlockProposal{},
-				}
-				proposalDutiesBySlot[proposal.Slot] = proposalDuty
-				dirtyDuties = append(dirtyDuties, proposalDuty)
+			eval := &proto.Evaluation{
+				Attestation: attesterDuties,
+				Proposer:    proposerDuties,
+				Committee:   committeeDuties,
+				Epoch:       res.Epoch,
+				GenesisTime: genesisTime,
 			}
 
-			for _, attestation := range attesterDuties {
-				timeToStart := res.AtSlot(attestation.Slot)
-
-				raw, err := json.Marshal(attestation)
-				if err != nil {
-					panic(err)
-				}
-				attestationDuty := &proto.Duty{
-					Id:         uuid.Generate(),
-					Slot:       attestation.Slot,
-					Epoch:      res.Epoch,
-					ActiveTime: timestamppb.New(timeToStart),
-					Input: &anypb.Any{
-						Value: raw,
-					},
-					Job: &proto.Duty_Attestation{
-						Attestation: &proto.Attestation{},
-					},
-				}
-
-				// TODO: as of now, aggregate always
-				aggregationDuty := &proto.Duty{
-					Id:         uuid.Generate(),
-					Slot:       attestation.Slot,
-					Epoch:      res.Epoch,
-					ActiveTime: timestamppb.New(timeToStart),
-					Job: &proto.Duty_AttestationAggregate{
-						AttestationAggregate: &proto.AttestationAggregate{},
-					},
-					BlockedBy: []string{
-						attestationDuty.Id,
-						proposalDutiesBySlot[attestation.Slot].Id,
-					},
-				}
-
-				dirtyDuties = append(dirtyDuties, attestationDuty)
-				dirtyDuties = append(dirtyDuties, aggregationDuty)
+			sched := scheduler.NewScheduler(hclog.L(), v, v.config.BeaconConfig)
+			plan, err := sched.Process(eval)
+			if err != nil {
+				panic(err)
 			}
 
-			for range committeeDuties {
-				for slot := res.FirstSlot; slot < res.LastSlot; slot++ {
-					timeToStart := res.AtSlot(slot)
-
-					committeDuty := &proto.Duty{
-						Id:         uuid.Generate(),
-						Slot:       slot,
-						Epoch:      res.Epoch,
-						ActiveTime: timestamppb.New(timeToStart),
-						Job:        &proto.Duty_SyncCommittee{},
-					}
-					dirtyDuties = append(dirtyDuties, committeDuty)
-				}
-			}
-
-			// clean duties that are historical
-			var cleanDuties []*proto.Duty
-
-			now := time.Now()
-			for _, d := range dirtyDuties {
-				if d.ActiveTime.AsTime().After(now) {
-					cleanDuties = append(cleanDuties, d)
-				}
-			}
-
-			v.evalQueue.Enqueue(cleanDuties)
+			v.evalQueue.Enqueue(plan.Duties)
 
 		case <-v.shutdownCh:
 			return
@@ -565,4 +524,27 @@ func (s *Server) loggingServerInterceptor(ctx context.Context, req interface{}, 
 	h, err := handler(ctx, req)
 	s.logger.Trace("Request", "method", info.FullMethod, "duration", time.Since(start), "error", err)
 	return h, err
+}
+
+func domainTypToDomain(typ proto.DomainType, config *beacon.ChainConfig) structs.Domain {
+	switch typ {
+	case proto.DomainBeaconProposerType:
+		return config.DomainBeaconProposer
+	case proto.DomainRandaomType:
+		return config.DomainRandao
+	case proto.DomainBeaconAttesterType:
+		return config.DomainBeaconAttester
+	case proto.DomainDepositType:
+		return config.DomainDeposit
+	case proto.DomainVoluntaryExitType:
+		return config.DomainVoluntaryExit
+	case proto.DomainSelectionProofType:
+		return config.DomainSelectionProof
+	case proto.DomainAggregateAndProofType:
+		return config.DomainAggregateAndProof
+	case proto.DomainSyncCommitteeType:
+		return config.DomainSyncCommittee
+	default:
+		panic(fmt.Errorf("domain typ not found: %s", typ))
+	}
 }
