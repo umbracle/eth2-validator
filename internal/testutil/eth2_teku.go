@@ -14,6 +14,8 @@ type TekuBeacon struct {
 // NewTekuBeacon creates a new teku server
 func NewTekuBeacon(config *BeaconConfig) (Node, error) {
 	cmd := []string{
+		// debug log
+		"--logging", "debug",
 		// eth1x
 		"--eth1-endpoint", config.Eth1,
 		// eth1x deposit contract
@@ -26,8 +28,6 @@ func NewTekuBeacon(config *BeaconConfig) (Node, error) {
 		"--rest-api-port", `{{ Port "eth2.http" }}`,
 		// logs
 		"--log-file", "/data/logs.txt",
-		// debug log
-		"--logging", "debug",
 		"--p2p-interface", "127.0.0.1",
 		"--p2p-port", `{{ Port "eth2.p2p" }}`,
 	}

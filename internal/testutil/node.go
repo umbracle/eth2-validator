@@ -47,7 +47,6 @@ type nodeOpts struct {
 	Retry      func(n *node) error
 	Name       string
 	Mount      []string
-	InHost     bool
 	Files      map[string]string
 	Logger     hclog.Logger
 	Output     []io.Writer
@@ -82,12 +81,6 @@ func WithNodeClient(nodeClient NodeClient) nodeOption {
 func WithNodeType(nodeType NodeType) nodeOption {
 	return func(n *nodeOpts) {
 		n.NodeType = nodeType
-	}
-}
-
-func WithHostNetwork() nodeOption {
-	return func(n *nodeOpts) {
-		n.InHost = true
 	}
 }
 
@@ -169,7 +162,6 @@ func newNode(opts ...nodeOption) (*node, error) {
 		Files:  map[string]string{},
 		Cmd:    []string{},
 		Logger: hclog.L(),
-		InHost: false,
 		Output: []io.Writer{},
 		Labels: map[string]string{},
 	}
@@ -270,10 +262,8 @@ func newNode(opts ...nodeOption) (*node, error) {
 		User:   nOpts.User,
 	}
 	hostConfig := &container.HostConfig{
-		Binds: []string{},
-	}
-	if nOpts.InHost {
-		hostConfig.NetworkMode = "host"
+		Binds:       []string{},
+		NetworkMode: "host",
 	}
 
 	for mount, local := range mountMap {
@@ -292,15 +282,6 @@ func newNode(opts ...nodeOption) (*node, error) {
 	}
 
 	go n.run()
-
-	// get the ip of the node if not running as a host network
-	if !nOpts.InHost {
-		containerData, err := cli.ContainerInspect(ctx, n.id)
-		if err != nil {
-			return nil, err
-		}
-		n.ip = containerData.NetworkSettings.IPAddress
-	}
 
 	if len(nOpts.Output) != 0 {
 		// track the logs to output

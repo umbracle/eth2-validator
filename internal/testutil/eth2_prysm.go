@@ -37,7 +37,6 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 		"--accept-terms-of-use",
 		// use data dir
 		"--datadir", "/data/eth2",
-		"--e2e-config",
 		"--force-clear-db",
 		// other
 		"--minimum-peers-per-subnet", "0",

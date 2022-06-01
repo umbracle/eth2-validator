@@ -27,7 +27,6 @@ func NewEth1Server() (*Eth1Server, error) {
 		"--dev.period", "1",
 		"--http", "--http.addr", "0.0.0.0",
 		"--http.port", `{{ Port "eth1.http" }}`,
-		"--ws", "--ws.addr", "0.0.0.0",
 	}
 	opts := []nodeOption{
 		WithName("eth1"),

@@ -61,7 +61,7 @@ type LighthouseValidator struct {
 func NewLighthouseValidator(config *ValidatorConfig) (Node, error) {
 	cmd := []string{
 		"lighthouse", "vc",
-		"--debug-level", "trace",
+		"--debug-level", "debug",
 		"--datadir", "/data/node",
 		"--beacon-nodes", config.Beacon.GetAddr(NodePortHttp),
 		"--testnet-dir", "/data",

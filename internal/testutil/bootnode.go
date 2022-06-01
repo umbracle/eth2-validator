@@ -41,7 +41,6 @@ func NewBootnode() (*Bootnode, error) {
 		WithName("bootnode"),
 		WithCmd(cmd),
 		WithContainer("gcr.io/prysmaticlabs/prysm/bootnode", "latest"),
-		WithHostNetwork(),
 		WithRetry(func(n *node) error {
 			enr, err := decodeEnr(n)
 			if err != nil {
