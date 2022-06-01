@@ -31,6 +31,15 @@ const (
 	Lighthouse NodeClient = "lighthouse"
 )
 
+type NodeType string
+
+const (
+	BeaconNodeType    NodeType = "beacon"
+	ValidatorNodeType NodeType = "validator"
+	BootnodeNodeType  NodeType = "bootnode"
+	OtherNodeType     NodeType = "other"
+)
+
 type nodeOpts struct {
 	Repository string
 	Tag        string
@@ -44,6 +53,7 @@ type nodeOpts struct {
 	Output     []io.Writer
 	Labels     map[string]string
 	NodeClient NodeClient
+	NodeType   NodeType
 	User       string
 }
 
@@ -63,9 +73,15 @@ type node struct {
 
 type nodeOption func(*nodeOpts)
 
-func WithNodeType(nodeClient NodeClient) nodeOption {
+func WithNodeClient(nodeClient NodeClient) nodeOption {
 	return func(n *nodeOpts) {
 		n.NodeClient = nodeClient
+	}
+}
+
+func WithNodeType(nodeType NodeType) nodeOption {
+	return func(n *nodeOpts) {
+		n.NodeType = nodeType
 	}
 }
 

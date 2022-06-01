@@ -17,7 +17,7 @@ func NewLighthouseBeacon(config *BeaconConfig) (Node, error) {
 		"lighthouse", "beacon_node",
 		"--http", "--http-address", "0.0.0.0",
 		"--http-port", `{{ Port "eth2.http" }}`,
-		"--eth1-endpoints", config.Config.Eth1,
+		"--eth1-endpoints", config.Eth1,
 		"--testnet-dir", "/data",
 		"--http-allow-sync-stalled",
 		"--debug-level", "trace",
@@ -32,18 +32,16 @@ func NewLighthouseBeacon(config *BeaconConfig) (Node, error) {
 		"--enable-private-discovery",
 	}
 	opts := []nodeOption{
-		WithName(config.Name),
 		WithNodeClient(Lighthouse),
 		WithNodeType(BeaconNodeType),
-		WithLogsDir(config.Config.LogsDir),
 		WithContainer("sigp/lighthouse", "v2.2.1"),
 		WithCmd(cmd),
 		WithMount("/data"),
-		WithFile("/data/config.yaml", config.Config.Spec),
+		WithFile("/data/config.yaml", config.Spec),
 		WithFile("/data/deploy_block.txt", "0"),
 	}
-	if config.Config.Bootnode != "" {
-		opts = append(opts, WithFile("/data/boot_enr.yaml", "- "+config.Config.Bootnode+"\n"))
+	if config.Bootnode != "" {
+		opts = append(opts, WithFile("/data/boot_enr.yaml", "- "+config.Bootnode+"\n"))
 	}
 
 	node, err := newNode(opts...)
@@ -70,14 +68,12 @@ func NewLighthouseValidator(config *ValidatorConfig) (Node, error) {
 		"--init-slashing-protection",
 	}
 	opts := []nodeOption{
-		WithName(config.Name),
 		WithNodeClient(Lighthouse),
 		WithNodeType(ValidatorNodeType),
-		WithLogsDir(config.Config.LogsDir),
 		WithContainer("sigp/lighthouse", "v2.2.1"),
 		WithCmd(cmd),
 		WithMount("/data"),
-		WithFile("/data/config.yaml", config.Config.Spec),
+		WithFile("/data/config.yaml", config.Spec),
 		WithFile("/data/deploy_block.txt", "0"),
 	}
 

@@ -19,8 +19,9 @@ type ValidatorConfig struct {
 }
 
 type BeaconConfig struct {
-	Spec *Eth2Spec
-	Eth1 Node
+	Spec     *Eth2Spec
+	Eth1     string
+	Bootnode string
 }
 
 type Account struct {
@@ -75,7 +76,7 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 
 	bCfg := &BeaconConfig{
 		Spec: spec,
-		Eth1: eth1.node,
+		Eth1: eth1.node.GetAddr(NodePortEth1Http),
 	}
 	b, err := beaconFn(bCfg)
 	require.NoError(t, err)
