@@ -46,7 +46,21 @@ func (s *State) InsertDuty(duty *proto.Duty) error {
 	return nil
 }
 
-func (s *State) JobsList(ws memdb.WatchSet) (memdb.ResultIterator, error) {
+func (s *State) DutyByID(dutyID string) (*proto.Duty, error) {
+	txn := s.memdb.Txn(false)
+	defer txn.Abort()
+
+	duty, err := txn.First(dutiesTable, "id", dutyID)
+	if err != nil {
+		return nil, err
+	}
+	if duty == nil {
+		return nil, nil
+	}
+	return duty.(*proto.Duty), nil
+}
+
+func (s *State) DutiesList(ws memdb.WatchSet) (memdb.ResultIterator, error) {
 	txn := s.memdb.Txn(false)
 	defer txn.Abort()
 

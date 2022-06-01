@@ -14,17 +14,12 @@ var schema = &memdb.DBSchema{
 				"id": {
 					Name:    "id",
 					Unique:  true,
-					Indexer: &memdb.UintFieldIndex{Field: "Slot"},
+					Indexer: &memdb.StringFieldIndex{Field: "Id"},
 				},
 				"type": {
 					Name:    "type",
 					Unique:  false,
 					Indexer: &IndexJob{},
-				},
-				"pubkey": {
-					Name:    "pubkey",
-					Unique:  false,
-					Indexer: &memdb.StringFieldIndex{Field: "PubKey"},
 				},
 			},
 		},

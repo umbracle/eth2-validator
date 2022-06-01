@@ -2,6 +2,9 @@ syntax = "proto3";
 
 package proto;
 
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/any.proto";
+
 option go_package = "/internal/server/proto";
 
 service ValidatorService {
@@ -16,22 +19,36 @@ message ListDutiesResponse {
 }
 
 message Duty {
+    // id is the identifier of the duty
+    string id = 1;
+
     // pubKey is the public key of the validator that signs the job
-    string pubKey = 1;
+    string pubKey = 2;
 
     // slot is the slot at which this job was created
-    uint64 slot = 2;
+    uint64 slot = 3;
+
+    // active_time is the time when this duty is meant to be executed
+    google.protobuf.Timestamp active_time = 4;
+    
+    // blockedBy is the list of duties for which this duty is blocked
+    repeated string blockedBy = 5;
+
+    uint64 epoch = 6;
+
+    google.protobuf.Any input = 7;
 
     oneof job {
-        BlockProposal BlockProposal = 3;
-        Attestation Attestation = 4;
-        AttestationAggregate AttestationAggregate = 5;
-        SyncCommittee SyncCommittee = 6;
+        BlockProposal BlockProposal = 20;
+        Attestation Attestation = 21;
+        AttestationAggregate AttestationAggregate = 22;
+        SyncCommittee SyncCommittee = 23;
     }
 }
 
 message BlockProposal {
     string root = 2;
+    string signature = 3;
 }
 
 message Attestation {

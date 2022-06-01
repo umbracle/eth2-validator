@@ -39,6 +39,8 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 		"--datadir", "/data/eth2",
 		"--e2e-config",
 		"--force-clear-db",
+		// other
+		"--minimum-peers-per-subnet", "0",
 	}
 	opts := []nodeOption{
 		WithNodeClient(Prysm),
