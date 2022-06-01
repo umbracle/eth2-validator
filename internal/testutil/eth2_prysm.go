@@ -18,16 +18,13 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 	cmd := []string{
 		"--verbosity", "debug",
 		// eth1x
-		"--http-web3provider", config.Eth1.GetAddr(NodePortEth1Http),
-		"--deposit-contract", config.Spec.DepositContract,
+		"--http-web3provider", config.Config.Eth1,
+		"--deposit-contract", config.Config.Spec.DepositContract,
 		"--contract-deployment-block", "0",
 		"--chain-id", "1337",
 		"--network-id", "1337",
 		// these sync fields have to be disabled for single node
 		"--min-sync-peers", "0",
-		"--disable-sync",
-		// do not connect with any peers
-		"--no-discovery",
 		// grpc endpoint
 		"--rpc-host", "0.0.0.0",
 		"--rpc-port", `{{ Port "eth2.prysm.grpc" }}`,
@@ -44,12 +41,14 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 		"--force-clear-db",
 	}
 	opts := []nodeOption{
-		WithName("prysm-beacon"),
-		WithNodeType(Prysm),
+		WithName(config.Name),
+		WithNodeClient(Prysm),
+		WithNodeType(BeaconNodeType),
+		WithLogsDir(config.Config.LogsDir),
 		WithContainer("gcr.io/prysmaticlabs/prysm/beacon-chain", "v2.0.6"),
 		WithCmd(cmd),
 		WithMount("/data"),
-		WithFile("/data/config.yaml", config.Spec),
+		WithFile("/data/config.yaml", config.Config.Spec),
 	}
 
 	node, err := newNode(opts...)
@@ -88,15 +87,20 @@ func NewPrysmValidator(config *ValidatorConfig) (Node, error) {
 		"--wallet-password-file", "/data/wallet-password.txt",
 		// beacon node reference of the GRPC endpoint
 		"--beacon-rpc-provider", strings.TrimPrefix(config.Beacon.GetAddr(NodePortPrysmGrpc), "http://"),
+		// config
+		"--chain-config-file", "/data/config.yaml",
 	}
 	opts := []nodeOption{
-		WithName("prysm-validator"),
-		WithNodeType(Prysm),
+		WithName(config.Name),
+		WithNodeClient(Prysm),
+		WithNodeType(ValidatorNodeType),
+		WithLogsDir(config.Config.LogsDir),
 		WithContainer("gcr.io/prysmaticlabs/prysm/validator", "v2.1.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/direct/accounts/all-accounts.keystore.json", keystore),
 		WithFile("/data/wallet-password.txt", defWalletPassword),
+		WithFile("/data/config.yaml", config.Config.Spec),
 	}
 
 	node, err := newNode(opts...)

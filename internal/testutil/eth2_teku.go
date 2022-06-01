@@ -15,27 +15,35 @@ type TekuBeacon struct {
 func NewTekuBeacon(config *BeaconConfig) (Node, error) {
 	cmd := []string{
 		// eth1x
-		"--eth1-endpoint", config.Eth1.GetAddr(NodePortEth1Http),
+		"--eth1-endpoint", config.Config.Eth1,
 		// eth1x deposit contract
-		"--eth1-deposit-contract-address", config.Spec.DepositContract,
+		"--eth1-deposit-contract-address", config.Config.Spec.DepositContract,
 		// run only beacon node
 		"--rest-api-enabled",
-		// allow requests from anyone
-		"--rest-api-host-allowlist", "*",
 		// config
 		"--network", "/data/config.yaml",
 		// port
 		"--rest-api-port", `{{ Port "eth2.http" }}`,
+		// logs
+		"--log-file", "/data/logs.txt",
 		// debug log
 		"--logging", "debug",
+		"--p2p-interface", "127.0.0.1",
+		"--p2p-port", `{{ Port "eth2.p2p" }}`,
 	}
+	if config.Config.Bootnode != "" {
+		cmd = append(cmd, "--p2p-discovery-bootnodes", config.Config.Bootnode)
+	}
+
 	opts := []nodeOption{
-		WithName("teku-beacon"),
-		WithNodeType(Teku),
+		WithName(config.Name),
+		WithNodeClient(Teku),
+		WithNodeType(BeaconNodeType),
+		WithLogsDir(config.Config.LogsDir),
 		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
-		WithFile("/data/config.yaml", config.Spec),
+		WithFile("/data/config.yaml", config.Config.Spec),
 		WithUser("0:0"),
 	}
 
@@ -61,19 +69,21 @@ func NewTekuValidator(config *ValidatorConfig) (Node, error) {
 		// data
 		"--data-path", "/data",
 		// eth1x deposit contract (required for custom networks)
-		"--eth1-deposit-contract-address", config.Spec.DepositContract,
+		"--eth1-deposit-contract-address", config.Config.Spec.DepositContract,
 		// config
 		"--network", "/data/config.yaml",
 		// keys
 		"--validator-keys", "/data/keys:/data/pass",
 	}
 	opts := []nodeOption{
-		WithName("teku-validator"),
-		WithNodeType(Teku),
+		WithName(config.Name),
+		WithNodeClient(Teku),
+		WithNodeType(ValidatorNodeType),
+		WithLogsDir(config.Config.LogsDir),
 		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
-		WithFile("/data/config.yaml", config.Spec),
+		WithFile("/data/config.yaml", config.Config.Spec),
 		WithUser("0:0"),
 	}
 
