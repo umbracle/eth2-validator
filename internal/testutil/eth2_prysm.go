@@ -19,10 +19,7 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 		"--verbosity", "debug",
 		// eth1x
 		"--http-web3provider", config.Eth1,
-		"--deposit-contract", config.Spec.DepositContract,
 		"--contract-deployment-block", "0",
-		"--chain-id", "1337",
-		"--network-id", "1337",
 		// these sync fields have to be disabled for single node
 		"--min-sync-peers", "0",
 		// grpc endpoint

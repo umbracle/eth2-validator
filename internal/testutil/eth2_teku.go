@@ -18,8 +18,6 @@ func NewTekuBeacon(config *BeaconConfig) (Node, error) {
 		"--logging", "debug",
 		// eth1x
 		"--eth1-endpoint", config.Eth1,
-		// eth1x deposit contract
-		"--eth1-deposit-contract-address", config.Spec.DepositContract,
 		// run only beacon node
 		"--rest-api-enabled",
 		// config
@@ -66,8 +64,6 @@ func NewTekuValidator(config *ValidatorConfig) (Node, error) {
 		"--beacon-node-api-endpoint", config.Beacon.GetAddr(NodePortHttp),
 		// data
 		"--data-path", "/data",
-		// eth1x deposit contract (required for custom networks)
-		"--eth1-deposit-contract-address", config.Spec.DepositContract,
 		// config
 		"--network", "/data/config.yaml",
 		// keys
