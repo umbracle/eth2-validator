@@ -189,6 +189,7 @@ func newNode(opts ...nodeOption) (*node, error) {
 		if err != nil {
 			return nil, err
 		}
+		fmt.Println(tmpDir)
 		mountMap[mount] = tmpDir
 	}
 

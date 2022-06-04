@@ -14,6 +14,7 @@ get-spec-tests:
 
 protoc:
 	protoc --go_out=. --go-grpc_out=. ./internal/server/proto/*.proto
+	protoc --go_out=. --go-grpc_out=. ./internal/testutil/proto/*.proto
 
 abigen-deposit:
 	ethgo abigen --source ./internal/deposit/deposit.abi --package deposit --output ./internal/deposit/
