@@ -10,7 +10,7 @@ service E2EService {
 }
 
 message DeployNodeRequest {
-
+    string nodeType = 1;
 }
 
 message DeployNodeResponse {
@@ -18,7 +18,7 @@ message DeployNodeResponse {
 }
 
 message DeployValidatorRequest {
-
+    uint64 numValidators = 1;
 }
 
 message DeployValidatorResponse {

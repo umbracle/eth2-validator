@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,8 +10,6 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/mitchellh/cli"
 	"github.com/umbracle/eth2-validator/internal/testutil"
-	"github.com/umbracle/eth2-validator/internal/testutil/proto"
-	"google.golang.org/grpc"
 )
 
 // E2EServerCommand is the command to deploy an e2e network
@@ -34,24 +31,6 @@ func (c *E2EServerCommand) Synopsis() string {
 
 // Run implements the cli.Command interface
 func (c *E2EServerCommand) Run(args []string) int {
-	if len(args) != 0 {
-		conn, err := grpc.Dial("localhost:5555", grpc.WithInsecure())
-		if err != nil {
-			panic(err)
-		}
-		clt := proto.NewE2EServiceClient(conn)
-
-		if args[0] == "beacon" {
-			fmt.Println(clt.DeployNode(context.Background(), &proto.DeployNodeRequest{}))
-		} else if args[0] == "validator" {
-			fmt.Println(clt.DeployValidator(context.Background(), &proto.DeployValidatorRequest{}))
-		} else {
-			c.UI.Output("this means nothing")
-		}
-
-		return 0
-	}
-
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:  "beacon",
 		Level: hclog.LevelFromString("info"),

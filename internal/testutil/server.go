@@ -94,9 +94,12 @@ func (s *Server) DeployNode(ctx context.Context, req *proto.DeployNodeRequest) (
 }
 
 func (s *Server) DeployValidator(ctx context.Context, req *proto.DeployValidatorRequest) (*proto.DeployValidatorResponse, error) {
+	if req.NumValidators == 0 {
+		return nil, fmt.Errorf("no validators provided")
+	}
 
 	var accounts []*Account
-	for i := 0; i < 10; i++ {
+	for i := 0; i < int(req.NumValidators); i++ {
 		accounts = append(accounts, NewAccount())
 	}
 	if err := s.eth1.MakeDeposits(accounts, s.Spec.GetChainConfig()); err != nil {
@@ -114,7 +117,7 @@ func (s *Server) DeployValidator(ctx context.Context, req *proto.DeployValidator
 	}
 	fmt.Println(v)
 
-	return nil, nil
+	return &proto.DeployValidatorResponse{}, nil
 }
 
 type httpClient struct {
