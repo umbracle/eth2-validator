@@ -31,6 +31,15 @@ const (
 	Lighthouse NodeClient = "lighthouse"
 )
 
+type NodeType string
+
+const (
+	BeaconNodeType    NodeType = "beacon"
+	ValidatorNodeType NodeType = "validator"
+	BootnodeNodeType  NodeType = "bootnode"
+	OtherNodeType     NodeType = "other"
+)
+
 type nodeOpts struct {
 	Repository string
 	Tag        string
@@ -38,12 +47,12 @@ type nodeOpts struct {
 	Retry      func(n *node) error
 	Name       string
 	Mount      []string
-	InHost     bool
 	Files      map[string]string
 	Logger     hclog.Logger
 	Output     []io.Writer
 	Labels     map[string]string
 	NodeClient NodeClient
+	NodeType   NodeType
 	User       string
 }
 
@@ -63,15 +72,15 @@ type node struct {
 
 type nodeOption func(*nodeOpts)
 
-func WithNodeType(nodeClient NodeClient) nodeOption {
+func WithNodeClient(nodeClient NodeClient) nodeOption {
 	return func(n *nodeOpts) {
 		n.NodeClient = nodeClient
 	}
 }
 
-func WithHostNetwork() nodeOption {
+func WithNodeType(nodeType NodeType) nodeOption {
 	return func(n *nodeOpts) {
-		n.InHost = true
+		n.NodeType = nodeType
 	}
 }
 
@@ -153,7 +162,6 @@ func newNode(opts ...nodeOption) (*node, error) {
 		Files:  map[string]string{},
 		Cmd:    []string{},
 		Logger: hclog.L(),
-		InHost: false,
 		Output: []io.Writer{},
 		Labels: map[string]string{},
 	}
@@ -254,10 +262,8 @@ func newNode(opts ...nodeOption) (*node, error) {
 		User:   nOpts.User,
 	}
 	hostConfig := &container.HostConfig{
-		Binds: []string{},
-	}
-	if nOpts.InHost {
-		hostConfig.NetworkMode = "host"
+		Binds:       []string{},
+		NetworkMode: "host",
 	}
 
 	for mount, local := range mountMap {
@@ -277,15 +283,6 @@ func newNode(opts ...nodeOption) (*node, error) {
 
 	go n.run()
 
-	// get the ip of the node if not running as a host network
-	if !nOpts.InHost {
-		containerData, err := cli.ContainerInspect(ctx, n.id)
-		if err != nil {
-			return nil, err
-		}
-		n.ip = containerData.NetworkSettings.IPAddress
-	}
-
 	if len(nOpts.Output) != 0 {
 		// track the logs to output
 		go func() {
@@ -296,7 +293,7 @@ func newNode(opts ...nodeOption) (*node, error) {
 	}
 
 	if nOpts.Retry != nil {
-		if err := n.retryFn(func() error {
+		if err := n.retryFn(defaultTimeoutDuration, func() error {
 			return nOpts.Retry(n)
 		}); err != nil {
 			return nil, err
@@ -342,9 +339,13 @@ func (n *node) execCmd(cmd string) (string, error) {
 			if !ok {
 				panic(fmt.Sprintf("Port '%s' not found", name))
 			}
-
-			relPort := atomic.AddUint64(port, 1)
-			n.ports[name] = relPort
+			var relPort uint64
+			if foundPort, ok := n.ports[name]; ok {
+				relPort = foundPort
+			} else {
+				relPort = atomic.AddUint64(port, 1)
+				n.ports[name] = relPort
+			}
 			return fmt.Sprintf("%d", relPort)
 		},
 	})
@@ -438,8 +439,10 @@ func (n *node) Type() NodeClient {
 	return n.opts.NodeClient
 }
 
-func (n *node) retryFn(handler func() error) error {
-	timeoutT := time.NewTimer(1 * time.Minute)
+var defaultTimeoutDuration = 1 * time.Minute
+
+func (n *node) retryFn(timeout time.Duration, handler func() error) error {
+	timeoutT := time.NewTimer(timeout)
 
 	for {
 		select {

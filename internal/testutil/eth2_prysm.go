@@ -18,14 +18,10 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 	cmd := []string{
 		"--verbosity", "debug",
 		// eth1x
-		"--http-web3provider", config.Eth1.GetAddr(NodePortEth1Http),
-		"--deposit-contract", config.Spec.DepositContract,
+		"--http-web3provider", config.Eth1,
 		"--contract-deployment-block", "0",
-		"--chain-id", "1337",
-		"--network-id", "1337",
 		// these sync fields have to be disabled for single node
 		"--min-sync-peers", "0",
-		"--disable-sync",
 		// grpc endpoint
 		"--rpc-host", "0.0.0.0",
 		"--rpc-port", `{{ Port "eth2.prysm.grpc" }}`,
@@ -38,14 +34,13 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 		"--accept-terms-of-use",
 		// use data dir
 		"--datadir", "/data/eth2",
-		"--e2e-config",
 		"--force-clear-db",
 		// other
 		"--minimum-peers-per-subnet", "0",
 	}
 	opts := []nodeOption{
-		WithName("prysm-beacon"),
-		WithNodeType(Prysm),
+		WithNodeClient(Prysm),
+		WithNodeType(BeaconNodeType),
 		WithContainer("gcr.io/prysmaticlabs/prysm/beacon-chain", "v2.0.6"),
 		WithCmd(cmd),
 		WithMount("/data"),
@@ -92,8 +87,8 @@ func NewPrysmValidator(config *ValidatorConfig) (Node, error) {
 		"--chain-config-file", "/data/config.yaml",
 	}
 	opts := []nodeOption{
-		WithName("prysm-validator"),
-		WithNodeType(Prysm),
+		WithNodeClient(Prysm),
+		WithNodeType(ValidatorNodeType),
 		WithContainer("gcr.io/prysmaticlabs/prysm/validator", "v2.1.0"),
 		WithCmd(cmd),
 		WithMount("/data"),

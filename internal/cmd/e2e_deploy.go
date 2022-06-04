@@ -52,7 +52,7 @@ func (c *E2EDeployCommand) Run(args []string) int {
 
 	c.UI.Output("=> Provision beacon node")
 	bCfg := &testutil.BeaconConfig{
-		Eth1: eth1,
+		Eth1: eth1.GetAddr(testutil.NodePortEth1Http),
 		Spec: spec,
 	}
 	b, err := testutil.NewTekuBeacon(bCfg)

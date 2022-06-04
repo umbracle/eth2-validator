@@ -14,24 +14,28 @@ type TekuBeacon struct {
 // NewTekuBeacon creates a new teku server
 func NewTekuBeacon(config *BeaconConfig) (Node, error) {
 	cmd := []string{
+		// debug log
+		"--logging", "debug",
 		// eth1x
-		"--eth1-endpoint", config.Eth1.GetAddr(NodePortEth1Http),
-		// eth1x deposit contract
-		"--eth1-deposit-contract-address", config.Spec.DepositContract,
+		"--eth1-endpoint", config.Eth1,
 		// run only beacon node
 		"--rest-api-enabled",
-		// allow requests from anyone
-		"--rest-api-host-allowlist", "*",
 		// config
 		"--network", "/data/config.yaml",
 		// port
 		"--rest-api-port", `{{ Port "eth2.http" }}`,
-		// debug log
-		"--logging", "debug",
+		// logs
+		"--log-file", "/data/logs.txt",
+		"--p2p-interface", "127.0.0.1",
+		"--p2p-port", `{{ Port "eth2.p2p" }}`,
 	}
+	if config.Bootnode != "" {
+		cmd = append(cmd, "--p2p-discovery-bootnodes", config.Bootnode)
+	}
+
 	opts := []nodeOption{
-		WithName("teku-beacon"),
-		WithNodeType(Teku),
+		WithNodeClient(Teku),
+		WithNodeType(BeaconNodeType),
 		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
@@ -60,16 +64,14 @@ func NewTekuValidator(config *ValidatorConfig) (Node, error) {
 		"--beacon-node-api-endpoint", config.Beacon.GetAddr(NodePortHttp),
 		// data
 		"--data-path", "/data",
-		// eth1x deposit contract (required for custom networks)
-		"--eth1-deposit-contract-address", config.Spec.DepositContract,
 		// config
 		"--network", "/data/config.yaml",
 		// keys
 		"--validator-keys", "/data/keys:/data/pass",
 	}
 	opts := []nodeOption{
-		WithName("teku-validator"),
-		WithNodeType(Teku),
+		WithNodeClient(Teku),
+		WithNodeType(ValidatorNodeType),
 		WithContainer("consensys/teku", "22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
