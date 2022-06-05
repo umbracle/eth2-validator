@@ -30,7 +30,8 @@ func NewEth1Server() (*Eth1Server, error) {
 	}
 	opts := []nodeOption{
 		WithName("eth1"),
-		WithContainer("ethereum/client-go", "v1.9.25"),
+		WithContainer("ethereum/client-go"),
+		WithTag("v1.9.25"),
 		WithCmd(cmd),
 		WithRetry(func(n *node) error {
 			return testHTTPEndpoint(n.GetAddr(NodePortEth1Http))

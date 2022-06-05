@@ -54,11 +54,6 @@ func Commands() map[string]cli.CommandFactory {
 				UI: ui,
 			}, nil
 		},
-		"e2e deploy": func() (cli.Command, error) {
-			return &E2EDeployCommand{
-				UI: ui,
-			}, nil
-		},
 		"e2e server": func() (cli.Command, error) {
 			return &E2EServerCommand{
 				UI: ui,

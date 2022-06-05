@@ -10,7 +10,7 @@ service E2EService {
 }
 
 message DeployNodeRequest {
-    string nodeType = 1;
+    NodeClient nodeClient = 1;
 }
 
 message DeployNodeResponse {
@@ -19,8 +19,22 @@ message DeployNodeResponse {
 
 message DeployValidatorRequest {
     uint64 numValidators = 1;
+    NodeClient nodeClient = 2;
 }
 
 message DeployValidatorResponse {
 
+}
+
+enum NodeType {
+    Other = 0;
+    Beacon = 1;
+    Validator = 2;
+    Bootnode = 3;
+}
+
+enum NodeClient {
+    Prysm = 0; 
+    Teku  = 1;
+    Lighthouse = 2;
 }

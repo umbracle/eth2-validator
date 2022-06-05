@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/umbracle/eth2-validator/internal/bls"
+	"github.com/umbracle/eth2-validator/internal/testutil/proto"
 )
 
 // TekuBeacon is a teku test server
@@ -12,7 +13,7 @@ type TekuBeacon struct {
 }
 
 // NewTekuBeacon creates a new teku server
-func NewTekuBeacon(config *BeaconConfig) (Node, error) {
+func NewTekuBeacon(config *BeaconConfig) ([]nodeOption, error) {
 	cmd := []string{
 		// debug log
 		"--logging", "debug",
@@ -26,7 +27,7 @@ func NewTekuBeacon(config *BeaconConfig) (Node, error) {
 		"--rest-api-port", `{{ Port "eth2.http" }}`,
 		// logs
 		"--log-file", "/data/logs.txt",
-		"--p2p-interface", "127.0.0.1",
+		"--p2p-advertised-ip", "0.0.0.0",
 		"--p2p-port", `{{ Port "eth2.p2p" }}`,
 	}
 	if config.Bootnode != "" {
@@ -34,30 +35,34 @@ func NewTekuBeacon(config *BeaconConfig) (Node, error) {
 	}
 
 	opts := []nodeOption{
-		WithNodeClient(Teku),
-		WithNodeType(BeaconNodeType),
-		WithContainer("consensys/teku", "22.4.0"),
+		WithNodeClient(proto.NodeClient_Teku),
+		WithNodeType(proto.NodeType_Beacon),
+		WithContainer("consensys/teku"),
+		WithTag("22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/config.yaml", config.Spec),
 		WithUser("0:0"),
 	}
+	return opts, nil
 
-	node, err := newNode(opts...)
-	if err != nil {
-		return nil, err
-	}
-	srv := &TekuBeacon{
-		node: node,
-	}
-	return srv, nil
+	/*
+		node, err := newNode(opts...)
+		if err != nil {
+			return nil, err
+		}
+		srv := &TekuBeacon{
+			node: node,
+		}
+		return srv, nil
+	*/
 }
 
 type TekuValidator struct {
 	*node
 }
 
-func NewTekuValidator(config *ValidatorConfig) (Node, error) {
+func NewTekuValidator(config *ValidatorConfig) ([]nodeOption, error) {
 	cmd := []string{
 		"vc",
 		// beacon api
@@ -70,9 +75,10 @@ func NewTekuValidator(config *ValidatorConfig) (Node, error) {
 		"--validator-keys", "/data/keys:/data/pass",
 	}
 	opts := []nodeOption{
-		WithNodeClient(Teku),
-		WithNodeType(ValidatorNodeType),
-		WithContainer("consensys/teku", "22.4.0"),
+		WithNodeClient(proto.NodeClient_Teku),
+		WithNodeType(proto.NodeType_Validator),
+		WithContainer("consensys/teku"),
+		WithTag("22.4.0"),
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/config.yaml", config.Spec),
@@ -91,10 +97,13 @@ func NewTekuValidator(config *ValidatorConfig) (Node, error) {
 			WithFile("/data/pass/"+name+".txt", defWalletPassword),
 		}...)
 	}
+	return opts, nil
 
-	node, err := newNode(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return &TekuValidator{node: node}, nil
+	/*
+		node, err := newNode(opts...)
+		if err != nil {
+			return nil, err
+		}
+		return &TekuValidator{node: node}, nil
+	*/
 }

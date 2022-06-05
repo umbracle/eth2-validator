@@ -48,10 +48,17 @@ func (c *E2ENodeCommand) Run(args []string) int {
 	}
 	clt := proto.NewE2EServiceClient(conn)
 
+	typ, ok := proto.StringToNodeClient(c.nodeType)
+	if !ok {
+		c.UI.Error("node type not found")
+		return 1
+	}
+	fmt.Println(typ)
+
 	if c.beaconNode {
-		fmt.Println(clt.DeployNode(context.Background(), &proto.DeployNodeRequest{NodeType: c.nodeType}))
+		fmt.Println(clt.DeployNode(context.Background(), &proto.DeployNodeRequest{NodeClient: typ}))
 	} else if c.validator {
-		fmt.Println(clt.DeployValidator(context.Background(), &proto.DeployValidatorRequest{NumValidators: c.numValidators}))
+		fmt.Println(clt.DeployValidator(context.Background(), &proto.DeployValidatorRequest{NodeClient: typ, NumValidators: c.numValidators}))
 	} else {
 		c.UI.Output("this means nothing")
 	}

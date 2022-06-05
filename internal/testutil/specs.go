@@ -14,7 +14,6 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 	"github.com/mitchellh/mapstructure"
 	"github.com/umbracle/eth2-validator/internal/beacon"
-	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"gopkg.in/yaml.v2"
 )
 
@@ -40,23 +39,8 @@ type Eth2Spec struct {
 }
 
 type Forks struct {
-	Altair    ForkSpec
-	Bellatrix ForkSpec
-}
-
-type ForkSpec struct {
-	Version structs.Domain
-	Epoch   uint64
-}
-
-func (f *ForkSpec) init() {
-	if f.Epoch != 0 {
-		// already set
-		return
-	}
-	// set default to not reachable ever
-	f.Epoch = 18446744073709551615
-	f.Version = structs.Domain{}
+	Altair    *int
+	Bellatrix *int
 }
 
 func (e *Eth2Spec) GetChainConfig() *beacon.ChainConfig {
@@ -71,6 +55,10 @@ func (e *Eth2Spec) MarshalText() ([]byte, error) {
 	return e.buildConfig(), nil
 }
 
+func intPtr(i int) *int {
+	return &i
+}
+
 func (e *Eth2Spec) buildConfig() []byte {
 	// set up default config values
 	if e.GenesisValidatorCount == 0 {
@@ -80,7 +68,7 @@ func (e *Eth2Spec) buildConfig() []byte {
 		e.GenesisDelay = 10 // second
 	}
 	if e.MinGenesisTime == 0 {
-		e.MinGenesisTime = time.Now().Second()
+		e.MinGenesisTime = int(time.Now().Unix())
 	}
 	if e.EthFollowDistance == 0 {
 		e.EthFollowDistance = 1 // blocks
@@ -104,10 +92,6 @@ func (e *Eth2Spec) buildConfig() []byte {
 		e.SecondsPerSlot = 3 // default 12 seconds
 	}
 
-	// init forks
-	e.Forks.Altair.init()
-	e.Forks.Bellatrix.init()
-
 	funcMap := template.FuncMap{
 		"marshal": func(obj interface{}) string {
 			enc, ok := obj.(encoding.TextMarshaler)
@@ -119,6 +103,17 @@ func (e *Eth2Spec) buildConfig() []byte {
 				panic(err)
 			}
 			return string(res)
+		},
+		"fork": func(obj interface{}) string {
+			num, ok := obj.(*int)
+			if !ok {
+				panic("BUG: Fork is not an int")
+			}
+			if num == nil {
+				// disable fork
+				return "18446744073709551615"
+			}
+			return fmt.Sprintf("%d", *num)
 		},
 	}
 

@@ -12,7 +12,6 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/mitchellh/cli"
 	"github.com/umbracle/eth2-validator/internal/server"
-	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"github.com/umbracle/eth2-validator/internal/testutil"
 )
 
@@ -93,12 +92,11 @@ func (c *Command) handleSignals() int {
 }
 
 func buildValidatorConfig(c *Config) (*server.Config, error) {
+	one := 1
+
 	testConfig := &testutil.Eth2Spec{
 		Forks: testutil.Forks{
-			Altair: testutil.ForkSpec{
-				Epoch:   1,
-				Version: structs.Domain{0x2, 0x0, 0x0, 0x0},
-			},
+			Altair: &one,
 		},
 	}
 

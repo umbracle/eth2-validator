@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -16,7 +17,12 @@ import (
 type E2EServerCommand struct {
 	UI cli.Ui
 
-	server *testutil.Server
+	server       *testutil.Server
+	name         string
+	nodeLogLevel string
+
+	genesisValidatorCount uint64
+	genesisTime           string
 }
 
 // Help implements the cli.Command interface
@@ -31,11 +37,36 @@ func (c *E2EServerCommand) Synopsis() string {
 
 // Run implements the cli.Command interface
 func (c *E2EServerCommand) Run(args []string) int {
+
+	flags := flag.NewFlagSet("e2e server", flag.ContinueOnError)
+	flags.StringVar(&c.name, "name", "random", "")
+	flags.StringVar(&c.nodeLogLevel, "node-log-level", "info", "")
+	flags.Uint64Var(&c.genesisValidatorCount, "genesis-validator-count", 10, "")
+	flags.StringVar(&c.genesisTime, "genesis-time", "", "")
+	flags.Parse(args)
+
+	config := testutil.DefaultConfig()
+	config.Name = c.name
+	config.LogLevel = c.nodeLogLevel
+	config.Spec.GenesisValidatorCount = int(c.genesisValidatorCount)
+
+	config.Spec.MinGenesisTime = int(time.Now().Unix())
+	if c.genesisTime != "" {
+		duration, err := time.ParseDuration(c.genesisTime)
+		if err != nil {
+			c.UI.Error(err.Error())
+			return 1
+		}
+		config.Spec.MinGenesisTime += int(duration.Seconds())
+	}
+
+	fmt.Println(config.Spec.MinGenesisTime)
+
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:  "beacon",
 		Level: hclog.LevelFromString("info"),
 	})
-	srv, err := testutil.NewServer(logger)
+	srv, err := testutil.NewServer(logger, config)
 	if err != nil {
 		panic(err)
 	}

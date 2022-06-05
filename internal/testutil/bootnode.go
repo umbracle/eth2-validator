@@ -40,7 +40,7 @@ func NewBootnode() (*Bootnode, error) {
 	opts := []nodeOption{
 		WithName("bootnode"),
 		WithCmd(cmd),
-		WithContainer("gcr.io/prysmaticlabs/prysm/bootnode", "latest"),
+		WithContainer("gcr.io/prysmaticlabs/prysm/bootnode"),
 		WithRetry(func(n *node) error {
 			enr, err := decodeEnr(n)
 			if err != nil {

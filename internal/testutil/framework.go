@@ -8,14 +8,13 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bls"
-	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"github.com/umbracle/ethgo/wallet"
 )
 
 type ValidatorConfig struct {
 	Spec     *Eth2Spec
 	Accounts []*Account
-	Beacon   Node
+	Beacon   *node
 }
 
 type BeaconConfig struct {
@@ -49,11 +48,15 @@ func NewAccount() *Account {
 	return account
 }
 
+type CreateBeacon2 func(cfg *BeaconConfig) ([]nodeOption, error)
+
 // CreateBeacon is a factory method to create beacon nodes
-type CreateBeacon func(cfg *BeaconConfig) (Node, error)
+type CreateBeacon func(cfg *BeaconConfig) (*node, error)
+
+type CreateValidator2 func(cfg *ValidatorConfig) ([]nodeOption, error)
 
 // CreateValidator is a factory method to create validator nodes
-type CreateValidator func(cfg *ValidatorConfig) (Node, error)
+type CreateValidator func(cfg *ValidatorConfig) (*node, error)
 
 func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValidator) {
 	eth1, err := NewEth1Server()
@@ -62,10 +65,7 @@ func testSingleNode(t *testing.T, beaconFn CreateBeacon, validatorFn CreateValid
 	spec := &Eth2Spec{
 		DepositContract: eth1.deposit.String(),
 		Forks: Forks{
-			Altair: ForkSpec{
-				Epoch:   2,
-				Version: structs.Domain{0x2, 0x0, 0x0, 0x0},
-			},
+			Altair: intPtr(2),
 		},
 	}
 

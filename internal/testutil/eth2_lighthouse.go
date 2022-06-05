@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 
 	"github.com/umbracle/eth2-validator/internal/bls"
+	"github.com/umbracle/eth2-validator/internal/testutil/proto"
 )
 
 // LighthouseBeacon is a prysm test server
@@ -12,7 +13,7 @@ type LighthouseBeacon struct {
 }
 
 // NewLighthouseBeacon creates a new prysm server
-func NewLighthouseBeacon(config *BeaconConfig) (Node, error) {
+func NewLighthouseBeacon(config *BeaconConfig) ([]nodeOption, error) {
 	cmd := []string{
 		"lighthouse", "beacon_node",
 		"--http", "--http-address", "0.0.0.0",
@@ -32,9 +33,10 @@ func NewLighthouseBeacon(config *BeaconConfig) (Node, error) {
 		"--enable-private-discovery",
 	}
 	opts := []nodeOption{
-		WithNodeClient(Lighthouse),
-		WithNodeType(BeaconNodeType),
-		WithContainer("sigp/lighthouse", "v2.2.1"),
+		WithNodeClient(proto.NodeClient_Lighthouse),
+		WithNodeType(proto.NodeType_Beacon),
+		WithContainer("sigp/lighthouse"),
+		WithTag("v2.2.1"),
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/config.yaml", config.Spec),
@@ -43,22 +45,25 @@ func NewLighthouseBeacon(config *BeaconConfig) (Node, error) {
 	if config.Bootnode != "" {
 		opts = append(opts, WithFile("/data/boot_enr.yaml", "- "+config.Bootnode+"\n"))
 	}
+	return opts, nil
 
-	node, err := newNode(opts...)
-	if err != nil {
-		return nil, err
-	}
-	srv := &LighthouseBeacon{
-		node: node,
-	}
-	return srv, nil
+	/*
+		node, err := newNode(opts...)
+		if err != nil {
+			return nil, err
+		}
+		srv := &LighthouseBeacon{
+			node: node,
+		}
+		return srv, nil
+	*/
 }
 
 type LighthouseValidator struct {
 	*node
 }
 
-func NewLighthouseValidator(config *ValidatorConfig) (Node, error) {
+func NewLighthouseValidator(config *ValidatorConfig) ([]nodeOption, error) {
 	cmd := []string{
 		"lighthouse", "vc",
 		"--debug-level", "debug",
@@ -68,9 +73,10 @@ func NewLighthouseValidator(config *ValidatorConfig) (Node, error) {
 		"--init-slashing-protection",
 	}
 	opts := []nodeOption{
-		WithNodeClient(Lighthouse),
-		WithNodeType(ValidatorNodeType),
-		WithContainer("sigp/lighthouse", "v2.2.1"),
+		WithNodeClient(proto.NodeClient_Lighthouse),
+		WithNodeType(proto.NodeType_Validator),
+		WithContainer("sigp/lighthouse"),
+		WithTag("v2.2.1"),
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/config.yaml", config.Spec),
@@ -92,13 +98,16 @@ func NewLighthouseValidator(config *ValidatorConfig) (Node, error) {
 			WithFile("/data/node/secrets/"+pubStr, defWalletPassword),
 		}...)
 	}
+	return opts, nil
 
-	node, err := newNode(opts...)
-	if err != nil {
-		return nil, err
-	}
-	srv := &LighthouseValidator{
-		node: node,
-	}
-	return srv, nil
+	/*
+		node, err := newNode(opts...)
+		if err != nil {
+			return nil, err
+		}
+		srv := &LighthouseValidator{
+			node: node,
+		}
+		return srv, nil
+	*/
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/umbracle/eth2-validator/internal/bls"
+	"github.com/umbracle/eth2-validator/internal/testutil/proto"
 	"github.com/umbracle/ethgo/keystore"
 )
 
@@ -14,14 +15,14 @@ type PrysmBeacon struct {
 }
 
 // NewPrysmBeacon creates a new prysm server
-func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
+func NewPrysmBeacon(config *BeaconConfig) ([]nodeOption, error) {
 	cmd := []string{
 		"--verbosity", "debug",
 		// eth1x
 		"--http-web3provider", config.Eth1,
 		"--contract-deployment-block", "0",
 		// these sync fields have to be disabled for single node
-		"--min-sync-peers", "0",
+		"--min-sync-peers", "1",
 		// grpc endpoint
 		"--rpc-host", "0.0.0.0",
 		"--rpc-port", `{{ Port "eth2.prysm.grpc" }}`,
@@ -37,24 +38,34 @@ func NewPrysmBeacon(config *BeaconConfig) (Node, error) {
 		"--force-clear-db",
 		// other
 		"--minimum-peers-per-subnet", "0",
+		// p2p port
+		"--p2p-tcp-port", `{{ Port "eth2.p2p" }}`,
+		"--p2p-udp-port", `{{ Port "eth2.p2p" }}`,
+	}
+	if config.Bootnode != "" {
+		cmd = append(cmd, "--bootstrap-node", config.Bootnode)
 	}
 	opts := []nodeOption{
-		WithNodeClient(Prysm),
-		WithNodeType(BeaconNodeType),
-		WithContainer("gcr.io/prysmaticlabs/prysm/beacon-chain", "v2.0.6"),
+		WithNodeClient(proto.NodeClient_Prysm),
+		WithNodeType(proto.NodeType_Beacon),
+		WithContainer("gcr.io/prysmaticlabs/prysm/beacon-chain"),
+		WithTag("v2.0.6"),
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/config.yaml", config.Spec),
 	}
+	return opts, nil
 
-	node, err := newNode(opts...)
-	if err != nil {
-		return nil, err
-	}
-	srv := &PrysmBeacon{
-		node: node,
-	}
-	return srv, nil
+	/*
+		node, err := newNode(opts...)
+		if err != nil {
+			return nil, err
+		}
+		srv := &PrysmBeacon{
+			node: node,
+		}
+		return srv, nil
+	*/
 }
 
 type PrysmValidator struct {
@@ -63,7 +74,7 @@ type PrysmValidator struct {
 
 const defWalletPassword = "qwerty"
 
-func NewPrysmValidator(config *ValidatorConfig) (Node, error) {
+func NewPrysmValidator(config *ValidatorConfig) ([]nodeOption, error) {
 	store := &accountStore{}
 	for _, acct := range config.Accounts {
 		store.AddKey(acct.Bls)
@@ -87,21 +98,25 @@ func NewPrysmValidator(config *ValidatorConfig) (Node, error) {
 		"--chain-config-file", "/data/config.yaml",
 	}
 	opts := []nodeOption{
-		WithNodeClient(Prysm),
-		WithNodeType(ValidatorNodeType),
-		WithContainer("gcr.io/prysmaticlabs/prysm/validator", "v2.1.0"),
+		WithNodeClient(proto.NodeClient_Prysm),
+		WithNodeType(proto.NodeType_Validator),
+		WithContainer("gcr.io/prysmaticlabs/prysm/validator"),
+		WithTag("v2.0.6"),
 		WithCmd(cmd),
 		WithMount("/data"),
 		WithFile("/data/direct/accounts/all-accounts.keystore.json", keystore),
 		WithFile("/data/wallet-password.txt", defWalletPassword),
 		WithFile("/data/config.yaml", config.Spec),
 	}
+	return opts, nil
 
-	node, err := newNode(opts...)
-	if err != nil {
-		return nil, err
-	}
-	return &PrysmValidator{node: node}, nil
+	/*
+		node, err := newNode(opts...)
+		if err != nil {
+			return nil, err
+		}
+		return &PrysmValidator{node: node}, nil
+	*/
 }
 
 // accountStore is the format used by all managers??

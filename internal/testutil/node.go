@@ -20,24 +20,9 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/strslice"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/hashicorp/go-hclog"
-)
-
-type NodeClient string
-
-const (
-	Teku       NodeClient = "teku"
-	Prysm      NodeClient = "prysm"
-	Lighthouse NodeClient = "lighthouse"
-)
-
-type NodeType string
-
-const (
-	BeaconNodeType    NodeType = "beacon"
-	ValidatorNodeType NodeType = "validator"
-	BootnodeNodeType  NodeType = "bootnode"
-	OtherNodeType     NodeType = "other"
+	"github.com/umbracle/eth2-validator/internal/testutil/proto"
 )
 
 type nodeOpts struct {
@@ -51,8 +36,8 @@ type nodeOpts struct {
 	Logger     hclog.Logger
 	Output     []io.Writer
 	Labels     map[string]string
-	NodeClient NodeClient
-	NodeType   NodeType
+	NodeClient proto.NodeClient
+	NodeType   proto.NodeType
 	User       string
 }
 
@@ -72,21 +57,26 @@ type node struct {
 
 type nodeOption func(*nodeOpts)
 
-func WithNodeClient(nodeClient NodeClient) nodeOption {
+func WithNodeClient(nodeClient proto.NodeClient) nodeOption {
 	return func(n *nodeOpts) {
 		n.NodeClient = nodeClient
 	}
 }
 
-func WithNodeType(nodeType NodeType) nodeOption {
+func WithNodeType(nodeType proto.NodeType) nodeOption {
 	return func(n *nodeOpts) {
 		n.NodeType = nodeType
 	}
 }
 
-func WithContainer(repository, tag string) nodeOption {
+func WithContainer(repository string) nodeOption {
 	return func(n *nodeOpts) {
 		n.Repository = repository
+	}
+}
+
+func WithTag(tag string) nodeOption {
+	return func(n *nodeOpts) {
 		n.Tag = tag
 	}
 }
@@ -164,6 +154,7 @@ func newNode(opts ...nodeOption) (*node, error) {
 		Logger: hclog.L(),
 		Output: []io.Writer{},
 		Labels: map[string]string{},
+		Tag:    "latest",
 	}
 	for _, opt := range opts {
 		opt(nOpts)
@@ -394,10 +385,11 @@ func (n *node) GetAddr(port NodePort) string {
 	return fmt.Sprintf("http://%s:%d", n.ip, num)
 }
 
-func (n *node) Stop() {
+func (n *node) Stop() error {
 	if err := n.cli.ContainerStop(context.Background(), n.id, nil); err != nil {
-		n.opts.Logger.Error("failed to stop container", "id", n.id, "err", err)
+		return fmt.Errorf("failed to stop container: %v", err)
 	}
+	return nil
 }
 
 func (n *node) trackOutput() error {
@@ -412,7 +404,7 @@ func (n *node) trackOutput() error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(writer, out); err != nil {
+	if _, err := stdcopy.StdCopy(writer, writer, out); err != nil {
 		return err
 	}
 	return nil
@@ -425,7 +417,7 @@ func (n *node) GetLogs() (string, error) {
 	if err != nil {
 		return "", nil
 	}
-	if _, err := io.Copy(wr, out); err != nil {
+	if _, err := stdcopy.StdCopy(wr, wr, out); err != nil {
 		return "", err
 	}
 	logs := wr.String()
@@ -436,7 +428,7 @@ func (n *node) IP() string {
 	return n.ip
 }
 
-func (n *node) Type() NodeClient {
+func (n *node) Type() proto.NodeClient {
 	return n.opts.NodeClient
 }
 
@@ -459,11 +451,4 @@ func (n *node) retryFn(timeout time.Duration, handler func() error) error {
 			return fmt.Errorf("timeout")
 		}
 	}
-}
-
-type Node interface {
-	GetAddr(NodePort) string
-	Type() NodeClient
-	IP() string
-	Stop()
 }
