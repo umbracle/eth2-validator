@@ -22,7 +22,7 @@ func NewPrysmBeacon(config *BeaconConfig) ([]nodeOption, error) {
 		"--http-web3provider", config.Eth1,
 		"--contract-deployment-block", "0",
 		// these sync fields have to be disabled for single node
-		"--min-sync-peers", "1",
+		"--min-sync-peers", "0",
 		// grpc endpoint
 		"--rpc-host", "0.0.0.0",
 		"--rpc-port", `{{ Port "eth2.prysm.grpc" }}`,
