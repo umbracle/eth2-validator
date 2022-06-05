@@ -41,10 +41,16 @@ type Server struct {
 	lock       sync.Mutex
 	fileLogger *fileLogger
 	nodes      []*node
+	bootnode   *Bootnode
 }
 
 func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 	eth1, err := NewEth1Server()
+	if err != nil {
+		return nil, err
+	}
+
+	bootnode, err := NewBootnode()
 	if err != nil {
 		return nil, err
 	}
@@ -65,6 +71,7 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 		eth1:       eth1,
 		nodes:      []*node{},
 		fileLogger: &fileLogger{path: config.Name},
+		bootnode:   bootnode,
 	}
 
 	if err := srv.writeFile("spec.yaml", config.Spec.buildConfig()); err != nil {
@@ -131,20 +138,28 @@ func (s *Server) DeployNode(ctx context.Context, req *proto.DeployNodeRequest) (
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
+	useBootnode := true
+
 	bCfg := &BeaconConfig{
 		Spec: s.config.Spec,
 		Eth1: s.eth1.node.GetAddr(NodePortEth1Http),
 	}
-	if len(s.nodes) != 0 {
-		client := httpClient{
-			addr: s.nodes[0].GetAddr(NodePortHttp),
+
+	if !useBootnode {
+		if len(s.nodes) != 0 {
+			client := httpClient{
+				addr: s.nodes[0].GetAddr(NodePortHttp),
+			}
+			identity, err := client.NodeIdentity()
+			if err != nil {
+				return nil, fmt.Errorf("cannto get a bootnode: %v", err)
+			}
+			bCfg.Bootnode = identity.ENR
 		}
-		identity, err := client.NodeIdentity()
-		if err != nil {
-			return nil, fmt.Errorf("cannto get a bootnode: %v", err)
-		}
-		bCfg.Bootnode = identity.ENR
+	} else {
+		bCfg.Bootnode = s.bootnode.Enr
 	}
+
 	var beaconFactory CreateBeacon2
 	switch req.NodeClient {
 	case proto.NodeClient_Teku:
