@@ -17,6 +17,13 @@ import (
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/server/state"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
+	"github.com/umbracle/eth2-validator/internal/version"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"google.golang.org/grpc"
 )
 
@@ -66,6 +73,13 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 
 	logger.Info("validator started")
 	go v.run()
+
+	if config.TelemetryOLTPExporter != "" {
+		if err := v.setupTelemetry(); err != nil {
+			return nil, err
+		}
+	}
+
 	return v, nil
 }
 
@@ -524,6 +538,51 @@ func (s *Server) loggingServerInterceptor(ctx context.Context, req interface{}, 
 	h, err := handler(ctx, req)
 	s.logger.Trace("Request", "method", info.FullMethod, "duration", time.Since(start), "error", err)
 	return h, err
+}
+
+func (s *Server) setupTelemetry() error {
+	s.logger.Info("Telemetry enabled", "otel-exporter", s.config.TelemetryOLTPExporter)
+
+	ctx := context.Background()
+
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String("eth2-validator"),
+			semconv.ServiceVersionKey.String(version.GetVersion()),
+		),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create open telemetry resource for service: %v", err)
+	}
+
+	var exporters []sdktrace.SpanExporter
+
+	// exporter for otel-collector
+	if s.config.TelemetryOLTPExporter != "" {
+		oltpExporter, err := otlptracegrpc.New(
+			ctx,
+			otlptracegrpc.WithInsecure(),
+			otlptracegrpc.WithEndpoint(s.config.TelemetryOLTPExporter),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create open telemetry tracer exporter for service: %v", err)
+		}
+		exporters = append(exporters, oltpExporter)
+	}
+
+	opts := []sdktrace.TracerProviderOption{
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithResource(res),
+	}
+	for _, exporter := range exporters {
+		opts = append(opts, sdktrace.WithSyncer(exporter))
+	}
+	tracerProvider := sdktrace.NewTracerProvider(opts...)
+
+	otel.SetTracerProvider(tracerProvider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	return nil
 }
 
 func domainTypToDomain(typ proto.DomainType, config *beacon.ChainConfig) structs.Domain {
