@@ -415,16 +415,39 @@ func (v *Server) Sign(domain proto.DomainType, account uint64, root []byte) ([]b
 	return signature, nil
 }
 
-func (v *Server) getEpoch(slot uint64) uint64 {
-	return slot / v.config.BeaconConfig.SlotsPerEpoch
-}
+func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
+	v.logger.Info("Schedule duties", "epoch", epoch)
 
-func (v *Server) isEpochStart(slot uint64) bool {
-	return slot%v.config.BeaconConfig.SlotsPerEpoch == 0
-}
+	// query duties for this epoch
+	attesterDuties, err := v.client.GetAttesterDuties(epoch, []string{"0"})
+	if err != nil {
+		return err
+	}
+	proposerDuties, err := v.client.GetProposerDuties(epoch)
+	if err != nil {
+		return err
+	}
+	committeeDuties, err := v.client.GetCommitteeSyncDuties(epoch, []string{"0"})
+	if err != nil {
+		return err
+	}
 
-func (v *Server) isEpochEnd(slot uint64) bool {
-	return v.isEpochStart(slot + 1)
+	eval := &proto.Evaluation{
+		Attestation: attesterDuties,
+		Proposer:    proposerDuties,
+		Committee:   committeeDuties,
+		Epoch:       epoch,
+		GenesisTime: genesisTime,
+	}
+
+	sched := scheduler.NewScheduler(hclog.L(), v, v.config.BeaconConfig)
+	plan, err := sched.Process(eval)
+	if err != nil {
+		return err
+	}
+
+	v.evalQueue.Enqueue(plan.Duties)
+	return nil
 }
 
 func (v *Server) watchDuties() {
@@ -446,37 +469,11 @@ func (v *Server) watchDuties() {
 	for {
 		select {
 		case res := <-bb.resCh:
-			v.logger.Info("Schedule duties", "epoch", res.Epoch)
-
-			// query duties for this epoch
-			attesterDuties, err := v.client.GetAttesterDuties(res.Epoch, []string{"0"})
-			if err != nil {
-				panic(err)
-			}
-			proposerDuties, err := v.client.GetProposerDuties(res.Epoch)
-			if err != nil {
-				panic(err)
-			}
-			committeeDuties, err := v.client.GetCommitteeSyncDuties(res.Epoch, []string{"0"})
-			if err != nil {
-				panic(err)
-			}
-
-			eval := &proto.Evaluation{
-				Attestation: attesterDuties,
-				Proposer:    proposerDuties,
-				Committee:   committeeDuties,
-				Epoch:       res.Epoch,
-				GenesisTime: genesisTime,
-			}
-
-			sched := scheduler.NewScheduler(hclog.L(), v, v.config.BeaconConfig)
-			plan, err := sched.Process(eval)
-			if err != nil {
-				panic(err)
-			}
-
-			v.evalQueue.Enqueue(plan.Duties)
+			go func() {
+				if err := v.handleNewEpoch(genesisTime, res.Epoch); err != nil {
+					v.logger.Error("failed to schedule epoch", "epoch", res.Epoch, "err")
+				}
+			}()
 
 		case <-v.shutdownCh:
 			return
