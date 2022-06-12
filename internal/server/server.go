@@ -121,16 +121,20 @@ func (v *Server) runWorker() {
 		v.logger.Info("handle duty", "id", duty.Id, "slot", duty.Slot, "validator", duty.ValidatorIndex, "typ", duty.Type())
 
 		go func(duty *proto.Duty) {
+
+			ctx, span := otel.Tracer("Sign").Start(context.Background(), duty.Type())
+			defer span.End()
+
 			var job proto.DutyJob
 			switch duty.Job.(type) {
 			case *proto.Duty_BlockProposal:
-				job, err = v.runBlockProposal(duty)
+				job, err = v.runBlockProposal(ctx, duty)
 			case *proto.Duty_Attestation:
-				job, err = v.runSingleAttestation(duty)
+				job, err = v.runSingleAttestation(ctx, duty)
 			case *proto.Duty_AttestationAggregate:
-				job, err = v.runAttestationAggregate(duty)
+				job, err = v.runAttestationAggregate(ctx, duty)
 			case *proto.Duty_SyncCommittee:
-				job, err = v.runSyncCommittee(duty)
+				job, err = v.runSyncCommittee(ctx, duty)
 			}
 			if err != nil {
 				panic(fmt.Errorf("failed to handle %v: %v", duty.Job, err))
@@ -158,7 +162,7 @@ func (v *Server) run() {
 	go v.runWorker()
 }
 
-func (v *Server) runSyncCommittee(duty *proto.Duty) (proto.DutyJob, error) {
+func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
 	// TODO: hardcoded
 	time.Sleep(1 * time.Second)
 
@@ -168,7 +172,7 @@ func (v *Server) runSyncCommittee(duty *proto.Duty) (proto.DutyJob, error) {
 		return nil, err
 	}
 
-	signature, err := v.Sign(proto.DomainSyncCommitteeType, duty.ValidatorIndex, proto.RootSSZ(latestRoot))
+	signature, err := v.Sign(ctx, proto.DomainSyncCommitteeType, duty.ValidatorIndex, proto.RootSSZ(latestRoot))
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +197,7 @@ func (v *Server) runSyncCommittee(duty *proto.Duty) (proto.DutyJob, error) {
 	return job, nil
 }
 
-func (v *Server) runSingleAttestation(duty *proto.Duty) (proto.DutyJob, error) {
+func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
 	// TODO: hardcoded
 	time.Sleep(1 * time.Second)
 
@@ -210,7 +214,7 @@ func (v *Server) runSingleAttestation(duty *proto.Duty) (proto.DutyJob, error) {
 		return nil, err
 	}
 
-	attestedSignature, err := v.Sign(proto.DomainBeaconAttesterType, duty.ValidatorIndex, attestationRoot[:])
+	attestedSignature, err := v.Sign(ctx, proto.DomainBeaconAttesterType, duty.ValidatorIndex, attestationRoot[:])
 	if err != nil {
 		return nil, err
 	}
@@ -244,7 +248,7 @@ func (v *Server) runSingleAttestation(duty *proto.Duty) (proto.DutyJob, error) {
 	return job, nil
 }
 
-func (v *Server) runAttestationAggregate(duty *proto.Duty) (proto.DutyJob, error) {
+func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
 	time.Sleep(1 * time.Second)
 
 	attestation, err := v.state.DutyByID(duty.BlockedBy[0])
@@ -288,7 +292,7 @@ func (v *Server) runAttestationAggregate(duty *proto.Duty) (proto.DutyJob, error
 		panic(err)
 	}
 
-	aggregateAndProofRootSignature, err := v.Sign(proto.DomainAggregateAndProofType, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot[:]))
+	aggregateAndProofRootSignature, err := v.Sign(ctx, proto.DomainAggregateAndProofType, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot[:]))
 	if err != nil {
 		return nil, err
 	}
@@ -305,10 +309,10 @@ func (v *Server) runAttestationAggregate(duty *proto.Duty) (proto.DutyJob, error
 	return &proto.Duty_AttestationAggregate{}, nil
 }
 
-func (v *Server) runBlockProposal(duty *proto.Duty) (proto.DutyJob, error) {
+func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
 	// create the randao
 
-	randaoReveal, err := v.Sign(proto.DomainRandaomType, duty.ValidatorIndex, proto.Uint64SSZ(duty.Epoch))
+	randaoReveal, err := v.Sign(ctx, proto.DomainRandaomType, duty.ValidatorIndex, proto.Uint64SSZ(duty.Epoch))
 	if err != nil {
 		return nil, err
 	}
@@ -323,7 +327,7 @@ func (v *Server) runBlockProposal(duty *proto.Duty) (proto.DutyJob, error) {
 		return nil, err
 	}
 
-	blockSignature, err := v.Sign(proto.DomainBeaconProposerType, duty.ValidatorIndex, blockRoot[:])
+	blockSignature, err := v.Sign(ctx, proto.DomainBeaconProposerType, duty.ValidatorIndex, blockRoot[:])
 	if err != nil {
 		return nil, err
 	}
@@ -345,48 +349,10 @@ func (v *Server) runBlockProposal(duty *proto.Duty) (proto.DutyJob, error) {
 	return job, nil
 }
 
-/*
-func (v *Server) signHash(domain structs.Domain, accountIndex uint64, obj *ssz.Hasher) ([]byte, error) {
-	genesis, err := v.client.Genesis(context.Background())
-	if err != nil {
-		return nil, err
-	}
+func (v *Server) Sign(ctx context.Context, domain proto.DomainType, accountIndex uint64, root []byte) ([]byte, error) {
+	_, span := otel.Tracer("Sign").Start(ctx, "Sign")
+	defer span.End()
 
-	ddd, err := v.config.BeaconConfig.ComputeDomain(domain, v.config.BeaconConfig.AltairForkVersion[:], genesis.Root)
-	if err != nil {
-		return nil, err
-	}
-
-	unsignedMsgRoot, err := obj.HashRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	rootToSign, err := ssz.HashWithDefaultHasher(&structs.SigningData{
-		ObjectRoot: unsignedMsgRoot[:],
-		Domain:     ddd,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	validator, err := v.state.GetValidatorByIndex(accountIndex)
-	if err != nil {
-		return nil, err
-	}
-	key, err := validator.Key()
-	if err != nil {
-		return nil, err
-	}
-	signature, err := key.Sign(rootToSign)
-	if err != nil {
-		return nil, err
-	}
-	return signature, nil
-}
-*/
-
-func (v *Server) Sign(domain proto.DomainType, accountIndex uint64, root []byte) ([]byte, error) {
 	genesis, err := v.client.Genesis(context.Background())
 	if err != nil {
 		return nil, err
@@ -424,6 +390,9 @@ func (v *Server) Sign(domain proto.DomainType, accountIndex uint64, root []byte)
 
 func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 	v.logger.Info("Schedule duties", "epoch", epoch)
+
+	ctx, span := otel.Tracer("Sign").Start(context.Background(), "Epoch")
+	defer span.End()
 
 	validators, err := v.state.GetValidatorsActiveAt(epoch)
 	if err != nil {
@@ -467,7 +436,7 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 		GenesisTime: genesisTime,
 	}
 
-	sched := scheduler.NewScheduler(hclog.L(), v, v.config.BeaconConfig)
+	sched := scheduler.NewScheduler(hclog.L(), ctx, v, v.config.BeaconConfig)
 	plan, err := sched.Process(eval)
 	if err != nil {
 		return err

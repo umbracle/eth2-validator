@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -16,20 +17,22 @@ import (
 )
 
 type State interface {
-	Sign(domain proto.DomainType, account uint64, root []byte) ([]byte, error)
+	Sign(ctx context.Context, domain proto.DomainType, account uint64, root []byte) ([]byte, error)
 }
 
 type Scheduler struct {
 	logger hclog.Logger
+	ctx    context.Context
 	state  State
 	eval   *proto.Evaluation
 	duties []*proto.Duty
 	config *beacon.ChainConfig
 }
 
-func NewScheduler(logger hclog.Logger, state State, config *beacon.ChainConfig) *Scheduler {
+func NewScheduler(logger hclog.Logger, ctx context.Context, state State, config *beacon.ChainConfig) *Scheduler {
 	return &Scheduler{
 		logger: logger,
+		ctx:    ctx,
 		state:  state,
 		config: config,
 	}
@@ -142,7 +145,7 @@ func (s *Scheduler) isAttestatorAggregate(committeeSize uint64, slot uint64, acc
 
 	slotRoot := proto.Uint64SSZ(slot)
 
-	signature, err := s.state.Sign(proto.DomainSelectionProofType, account, slotRoot)
+	signature, err := s.state.Sign(s.ctx, proto.DomainSelectionProofType, account, slotRoot)
 	if err != nil {
 		return false, fmt.Errorf("failed to sign attestation aggregate: %v", err)
 	}
