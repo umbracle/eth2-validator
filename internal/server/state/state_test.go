@@ -1,11 +1,9 @@
 package state
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"testing"
-	"time"
 
 	"github.com/hashicorp/go-memdb"
 	"github.com/stretchr/testify/assert"
@@ -13,8 +11,7 @@ import (
 )
 
 func newTestState(t *testing.T) *State {
-	dir := fmt.Sprintf("/tmp/bridge-temp_%v", time.Now().Format(time.RFC3339))
-	err := os.Mkdir(dir, 0777)
+	dir, err := os.MkdirTemp("/tmp", "eth2-state-")
 	if err != nil {
 		t.Fatal(err)
 	}

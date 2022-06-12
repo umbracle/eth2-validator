@@ -13,7 +13,7 @@ type State struct {
 }
 
 func NewState(path string) (*State, error) {
-	db, err := bolt.Open("/tmp/bolt.db", 0600, nil) // TODO
+	db, err := bolt.Open(path, 0600, nil) // TODO
 	if err != nil {
 		return nil, err
 	}
