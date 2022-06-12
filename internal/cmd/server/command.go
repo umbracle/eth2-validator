@@ -1,12 +1,13 @@
 package server
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	flag "github.com/spf13/pflag"
 
 	"github.com/google/gops/agent"
 	"github.com/hashicorp/go-hclog"
@@ -124,7 +125,7 @@ func (c *Command) readConfig(args []string) (*Config, error) {
 	flags.BoolVar(&cliConfig.Debug, "debug", false, "")
 	flags.StringVar(&cliConfig.BeaconChain, "beacon-chain", "", "")
 	flags.StringVar(&cliConfig.Endpoint, "endpoint", "", "")
-	flags.StringVar(&cliConfig.PrivKey, "priv-key", "", "")
+	flags.StringArrayVar(&cliConfig.PrivKey, "priv-key", []string{}, "")
 
 	if err := flags.Parse(args); err != nil {
 		return nil, err

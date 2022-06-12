@@ -49,11 +49,12 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 		timeToStart := s.atSlot(proposal.Slot)
 
 		proposalDuty := &proto.Duty{
-			Id:         uuid.Generate(),
-			Slot:       proposal.Slot,
-			Epoch:      eval.Epoch,
-			ActiveTime: timestamppb.New(timeToStart),
-			Job:        &proto.Duty_BlockProposal{},
+			Id:             uuid.Generate(),
+			Slot:           proposal.Slot,
+			Epoch:          eval.Epoch,
+			ActiveTime:     timestamppb.New(timeToStart),
+			Job:            &proto.Duty_BlockProposal{},
+			ValidatorIndex: uint64(proposal.ValidatorIndex),
 		}
 		proposalDutiesBySlot[proposal.Slot] = proposalDuty
 		duties = append(duties, proposalDuty)
@@ -67,10 +68,11 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 			return nil, err
 		}
 		attestationDuty := &proto.Duty{
-			Id:         uuid.Generate(),
-			Slot:       attestation.Slot,
-			Epoch:      eval.Epoch,
-			ActiveTime: timestamppb.New(timeToStart),
+			Id:             uuid.Generate(),
+			Slot:           attestation.Slot,
+			Epoch:          eval.Epoch,
+			ActiveTime:     timestamppb.New(timeToStart),
+			ValidatorIndex: uint64(attestation.ValidatorIndex),
 			Input: &anypb.Any{
 				Value: raw,
 			},
@@ -86,10 +88,11 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 		}
 		if isAggregate {
 			aggregationDuty := &proto.Duty{
-				Id:         uuid.Generate(),
-				Slot:       attestation.Slot,
-				Epoch:      eval.Epoch,
-				ActiveTime: timestamppb.New(timeToStart),
+				Id:             uuid.Generate(),
+				Slot:           attestation.Slot,
+				Epoch:          eval.Epoch,
+				ActiveTime:     timestamppb.New(timeToStart),
+				ValidatorIndex: uint64(attestation.ValidatorIndex),
 				Job: &proto.Duty_AttestationAggregate{
 					AttestationAggregate: &proto.AttestationAggregate{},
 				},
@@ -106,16 +109,17 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 	FirstSlot := eval.Epoch * s.config.SlotsPerEpoch
 	LastSlot := eval.Epoch*s.config.SlotsPerEpoch + s.config.SlotsPerEpoch
 
-	for range eval.Committee {
+	for _, committee := range eval.Committee {
 		for slot := FirstSlot; slot < LastSlot; slot++ {
 			timeToStart := s.atSlot(slot)
 
 			committeDuty := &proto.Duty{
-				Id:         uuid.Generate(),
-				Slot:       slot,
-				Epoch:      eval.Epoch,
-				ActiveTime: timestamppb.New(timeToStart),
-				Job:        &proto.Duty_SyncCommittee{},
+				Id:             uuid.Generate(),
+				Slot:           slot,
+				Epoch:          eval.Epoch,
+				ActiveTime:     timestamppb.New(timeToStart),
+				Job:            &proto.Duty_SyncCommittee{},
+				ValidatorIndex: uint64(committee.ValidatorIndex),
 			}
 			duties = append(duties, committeDuty)
 		}

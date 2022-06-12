@@ -71,3 +71,26 @@ func TestState_InsertDuty(t *testing.T) {
 	assert.Nil(t, err)
 	assert.Equal(t, found.Id, "b")
 }
+
+func TestState_ValidatorWorkflow(t *testing.T) {
+	state := newTestState(t)
+
+	val := &proto.Validator{
+		PubKey:          "a",
+		Index:           1,
+		ActivationEpoch: 5,
+	}
+	assert.NoError(t, state.UpsertValidator(val))
+
+	val = &proto.Validator{
+		PubKey:          "b",
+		Index:           2,
+		ActivationEpoch: 2,
+	}
+	assert.NoError(t, state.UpsertValidator(val))
+
+	vals, err := state.GetValidatorsActiveAt(4)
+	assert.NoError(t, err)
+	assert.Len(t, vals, 1)
+	assert.Equal(t, vals[0].Index, uint64(2))
+}

@@ -225,8 +225,16 @@ func (h *HttpAPI) SubmitCommitteeDuties(duties []*SyncCommitteeMessage) error {
 }
 
 type Validator struct {
-	Index  uint64 `json:"index"`
-	Status string `json:"status"`
+	Index     uint64 `json:"index"`
+	Status    string `json:"status"`
+	Validator struct {
+		PubKey                     string `json:"pubkey"`
+		Slashed                    bool   `json:"slashed"`
+		ActivationElegibilityEpoch uint64 `json"activation_eligibility_epoch"`
+		ActivationEpoch            uint64 `json:"activation_epoch"`
+		ExitEpoch                  uint64 `json:"exit_epoch"`
+		WithdrawableEpoch          uint64 `json:"withdrawable_epoch"`
+	} `json:"validator"`
 }
 
 func (h *HttpAPI) GetValidatorByPubKey(pub string) (*Validator, error) {
