@@ -133,7 +133,7 @@ func (v *Server) runWorker() {
 				job, err = v.runSyncCommittee(duty)
 			}
 			if err != nil {
-				panic(err)
+				panic(fmt.Errorf("failed to handle %v: %v", duty.Job, err))
 			}
 
 			// upsert the job on state
@@ -158,22 +158,6 @@ func (v *Server) run() {
 	go v.runWorker()
 }
 
-func uint64SSZ(epoch uint64) *ssz.Hasher {
-	hh := ssz.NewHasher()
-	indx := hh.Index()
-	hh.PutUint64(epoch)
-	hh.Merkleize(indx)
-	return hh
-}
-
-func signatureSSZ(sig []byte) *ssz.Hasher {
-	hh := ssz.NewHasher()
-	indx := hh.Index()
-	hh.PutBytes(sig)
-	hh.Merkleize(indx)
-	return hh
-}
-
 func (v *Server) runSyncCommittee(duty *proto.Duty) (proto.DutyJob, error) {
 	// TODO: hardcoded
 	time.Sleep(1 * time.Second)
@@ -184,8 +168,7 @@ func (v *Server) runSyncCommittee(duty *proto.Duty) (proto.DutyJob, error) {
 		return nil, err
 	}
 
-	hh := signatureSSZ(latestRoot)
-	signature, err := v.signHash(v.config.BeaconConfig.DomainSyncCommittee, duty.ValidatorIndex, hh)
+	signature, err := v.Sign(proto.DomainSyncCommitteeType, duty.ValidatorIndex, proto.RootSSZ(latestRoot))
 	if err != nil {
 		return nil, err
 	}
@@ -222,18 +205,12 @@ func (v *Server) runSingleAttestation(duty *proto.Duty) (proto.DutyJob, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	indexed := &structs.IndexedAttestation{
-		AttestationIndices: []uint64{0},
-		Data:               attestationData,
-	}
-
-	hh := ssz.NewHasher()
-	if err := indexed.Data.HashTreeRootWith(hh); err != nil {
+	attestationRoot, err := attestationData.HashTreeRoot()
+	if err != nil {
 		return nil, err
 	}
 
-	attestedSignature, err := v.signHash(v.config.BeaconConfig.DomainBeaconAttester, duty.ValidatorIndex, hh)
+	attestedSignature, err := v.Sign(proto.DomainBeaconAttesterType, duty.ValidatorIndex, attestationRoot[:])
 	if err != nil {
 		return nil, err
 	}
@@ -247,11 +224,6 @@ func (v *Server) runSingleAttestation(duty *proto.Duty) (proto.DutyJob, error) {
 		Signature:       attestedSignature,
 	}
 	if err := v.client.PublishAttestations([]*structs.Attestation{attestation}); err != nil {
-		return nil, err
-	}
-
-	attestationRoot, err := attestationData.HashTreeRoot()
-	if err != nil {
 		return nil, err
 	}
 
@@ -316,8 +288,7 @@ func (v *Server) runAttestationAggregate(duty *proto.Duty) (proto.DutyJob, error
 		panic(err)
 	}
 
-	hh := signatureSSZ(aggregateAndProofRoot[:])
-	aggregateAndProofRootSignature, err := v.signHash(v.config.BeaconConfig.DomainAggregateAndProof, duty.ValidatorIndex, hh)
+	aggregateAndProofRootSignature, err := v.Sign(proto.DomainAggregateAndProofType, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot[:]))
 	if err != nil {
 		return nil, err
 	}
@@ -337,8 +308,7 @@ func (v *Server) runAttestationAggregate(duty *proto.Duty) (proto.DutyJob, error
 func (v *Server) runBlockProposal(duty *proto.Duty) (proto.DutyJob, error) {
 	// create the randao
 
-	epochSSZ := uint64SSZ(duty.Epoch)
-	randaoReveal, err := v.signHash(v.config.BeaconConfig.DomainRandao, duty.ValidatorIndex, epochSSZ)
+	randaoReveal, err := v.Sign(proto.DomainRandaomType, duty.ValidatorIndex, proto.Uint64SSZ(duty.Epoch))
 	if err != nil {
 		return nil, err
 	}
@@ -348,12 +318,12 @@ func (v *Server) runBlockProposal(duty *proto.Duty) (proto.DutyJob, error) {
 		return nil, err
 	}
 
-	hh := ssz.NewHasher()
-	if err := block.HashTreeRootWith(hh); err != nil {
+	blockRoot, err := block.HashTreeRoot()
+	if err != nil {
 		return nil, err
 	}
 
-	blockSignature, err := v.signHash(v.config.BeaconConfig.DomainBeaconProposer, duty.ValidatorIndex, hh)
+	blockSignature, err := v.Sign(proto.DomainBeaconProposerType, duty.ValidatorIndex, blockRoot[:])
 	if err != nil {
 		return nil, err
 	}
@@ -375,6 +345,7 @@ func (v *Server) runBlockProposal(duty *proto.Duty) (proto.DutyJob, error) {
 	return job, nil
 }
 
+/*
 func (v *Server) signHash(domain structs.Domain, accountIndex uint64, obj *ssz.Hasher) ([]byte, error) {
 	genesis, err := v.client.Genesis(context.Background())
 	if err != nil {
@@ -413,6 +384,7 @@ func (v *Server) signHash(domain structs.Domain, accountIndex uint64, obj *ssz.H
 	}
 	return signature, nil
 }
+*/
 
 func (v *Server) Sign(domain proto.DomainType, accountIndex uint64, root []byte) ([]byte, error) {
 	genesis, err := v.client.Genesis(context.Background())

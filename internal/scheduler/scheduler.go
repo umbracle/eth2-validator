@@ -140,7 +140,7 @@ func (s *Scheduler) isAttestatorAggregate(committeeSize uint64, slot uint64, acc
 		modulo = 1
 	}
 
-	slotRoot := proto.Uint64Root(slot)
+	slotRoot := proto.Uint64SSZ(slot)
 
 	signature, err := s.state.Sign(proto.DomainSelectionProofType, account, slotRoot)
 	if err != nil {
