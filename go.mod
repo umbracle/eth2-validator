@@ -18,7 +18,7 @@ require (
 	github.com/mitchellh/mapstructure v1.3.3
 	github.com/r3labs/sse/v2 v2.7.4
 	github.com/spf13/pflag v1.0.3
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/supranational/blst v0.3.3
 	github.com/umbracle/ethgo v0.1.2
 	go.opentelemetry.io/otel v1.7.0
