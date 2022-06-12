@@ -1,11 +1,9 @@
 package state
 
 import (
-	"fmt"
 	"os"
 	"path"
 	"testing"
-	"time"
 
 	"github.com/hashicorp/go-memdb"
 	"github.com/stretchr/testify/assert"
@@ -13,8 +11,7 @@ import (
 )
 
 func newTestState(t *testing.T) *State {
-	dir := fmt.Sprintf("/tmp/bridge-temp_%v", time.Now().Format(time.RFC3339))
-	err := os.Mkdir(dir, 0777)
+	dir, err := os.MkdirTemp("/tmp", "eth2-state-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,4 +67,27 @@ func TestState_InsertDuty(t *testing.T) {
 	found, err := state.DutyByID("b")
 	assert.Nil(t, err)
 	assert.Equal(t, found.Id, "b")
+}
+
+func TestState_ValidatorWorkflow(t *testing.T) {
+	state := newTestState(t)
+
+	val := &proto.Validator{
+		PubKey:          "a",
+		Index:           1,
+		ActivationEpoch: 5,
+	}
+	assert.NoError(t, state.UpsertValidator(val))
+
+	val = &proto.Validator{
+		PubKey:          "b",
+		Index:           2,
+		ActivationEpoch: 2,
+	}
+	assert.NoError(t, state.UpsertValidator(val))
+
+	vals, err := state.GetValidatorsActiveAt(4)
+	assert.NoError(t, err)
+	assert.Len(t, vals, 1)
+	assert.Equal(t, vals[0].Index, uint64(2))
 }

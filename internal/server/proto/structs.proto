@@ -38,6 +38,8 @@ message Duty {
 
     google.protobuf.Any input = 7;
 
+    uint64 validatorIndex = 8;
+    
     oneof job {
         BlockProposal BlockProposal = 20;
         Attestation Attestation = 21;
@@ -67,4 +69,11 @@ message AttestationAggregate {
 }
 
 message SyncCommittee {
+}
+
+message Validator {
+    uint64 index = 1;
+    string pubKey = 2;
+    uint64 activationEpoch = 3;
+    string privKey = 4; // provisional
 }
