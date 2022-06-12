@@ -2,9 +2,11 @@ package proto
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"time"
 
 	"github.com/umbracle/eth2-validator/internal/beacon"
+	"github.com/umbracle/eth2-validator/internal/bls"
 )
 
 type DutyType string
@@ -64,4 +66,16 @@ func Uint64Root(num uint64) []byte {
 	buf := make([]byte, 32)
 	binary.LittleEndian.PutUint64(buf, num)
 	return buf
+}
+
+func (v *Validator) Key() (*bls.Key, error) {
+	buf, err := hex.DecodeString(v.PrivKey)
+	if err != nil {
+		return nil, err
+	}
+	key, err := bls.NewKeyFromPriv(buf)
+	if err != nil {
+		return nil, err
+	}
+	return key, nil
 }

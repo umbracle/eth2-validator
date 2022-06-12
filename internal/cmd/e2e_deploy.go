@@ -3,6 +3,7 @@ package cmd
 import (
 	"encoding/hex"
 	"fmt"
+	"strings"
 
 	"github.com/mitchellh/cli"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
@@ -33,7 +34,7 @@ func (c *E2EDeployCommand) Run(args []string) int {
 		return 1
 	}
 
-	account := testutil.NewAccount()
+	accounts := testutil.NewAccounts(2)
 	spec := &testutil.Eth2Spec{
 		DepositContract: eth1.Deposit().String(),
 		Forks: testutil.Forks{
@@ -45,7 +46,7 @@ func (c *E2EDeployCommand) Run(args []string) int {
 	}
 
 	c.UI.Output("=> Deploy deposit")
-	if err = eth1.MakeDeposit(account, spec.GetChainConfig()); err != nil {
+	if err = eth1.MakeDeposits(accounts, spec.GetChainConfig()); err != nil {
 		c.UI.Error(err.Error())
 		return 1
 	}
@@ -61,17 +62,20 @@ func (c *E2EDeployCommand) Run(args []string) int {
 		return 1
 	}
 
-	key, err := account.Bls.Marshal()
-	if err != nil {
-		c.UI.Error(err.Error())
-		return 1
+	privAccounts := []string{}
+	for _, account := range accounts {
+		key, err := account.Bls.Marshal()
+		if err != nil {
+			c.UI.Error(err.Error())
+			return 1
+		}
+		privAccounts = append(privAccounts, hex.EncodeToString(key))
 	}
-
-	c.UI.Output(hex.EncodeToString(key))
+	c.UI.Output(strings.Join(privAccounts, ","))
 
 	c.UI.Output("=> Provision validator")
 	vCfg := &testutil.ValidatorConfig{
-		Accounts: []*testutil.Account{account},
+		Accounts: accounts,
 		Spec:     spec,
 		Beacon:   b,
 	}
