@@ -45,6 +45,15 @@ func (s *Scheduler) atSlot(slot uint64) time.Time {
 func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 	s.eval = eval
 
+	slotDuration := time.Duration(s.config.SecondsPerSlot) * time.Second
+
+	// pre-compute the delays
+	var (
+		attestationDelay            = slotDuration / 3
+		attestationAggregationDelay = slotDuration * 2 / 3
+		syncCommitteeDelay          = slotDuration / 3
+	)
+
 	proposalDutiesBySlot := map[uint64]*proto.Duty{}
 
 	var duties []*proto.Duty
@@ -64,8 +73,6 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 	}
 
 	for _, attestation := range eval.Attestation {
-		timeToStart := s.atSlot(attestation.Slot)
-
 		raw, err := json.Marshal(attestation)
 		if err != nil {
 			return nil, err
@@ -74,7 +81,7 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 			Id:             uuid.Generate(),
 			Slot:           attestation.Slot,
 			Epoch:          eval.Epoch,
-			ActiveTime:     timestamppb.New(timeToStart),
+			ActiveTime:     timestamppb.New(s.atSlot(attestation.Slot).Add(attestationDelay)),
 			ValidatorIndex: uint64(attestation.ValidatorIndex),
 			Input: &anypb.Any{
 				Value: raw,
@@ -94,7 +101,7 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 				Id:             uuid.Generate(),
 				Slot:           attestation.Slot,
 				Epoch:          eval.Epoch,
-				ActiveTime:     timestamppb.New(timeToStart),
+				ActiveTime:     timestamppb.New(s.atSlot(attestation.Slot).Add(attestationAggregationDelay)),
 				ValidatorIndex: uint64(attestation.ValidatorIndex),
 				Job: &proto.Duty_AttestationAggregate{
 					AttestationAggregate: &proto.AttestationAggregate{},
@@ -114,13 +121,11 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 
 	for _, committee := range eval.Committee {
 		for slot := FirstSlot; slot < LastSlot; slot++ {
-			timeToStart := s.atSlot(slot)
-
 			committeDuty := &proto.Duty{
 				Id:             uuid.Generate(),
 				Slot:           slot,
 				Epoch:          eval.Epoch,
-				ActiveTime:     timestamppb.New(timeToStart),
+				ActiveTime:     timestamppb.New(s.atSlot(slot).Add(syncCommitteeDelay)),
 				Job:            &proto.Duty_SyncCommittee{},
 				ValidatorIndex: uint64(committee.ValidatorIndex),
 			}
