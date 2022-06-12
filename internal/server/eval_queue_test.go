@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -10,10 +11,12 @@ import (
 )
 
 func TestEvalQueue_X(t *testing.T) {
+	ctx := context.Background()
+
 	e := NewEvalQueue()
 	e.Start()
 
-	e.Enqueue([]*proto.Duty{
+	e.Enqueue(ctx, []*proto.Duty{
 		{
 			Id:         "a",
 			ActiveTime: timestamppb.New(time.Now().Add(1 * time.Second)),
@@ -21,14 +24,14 @@ func TestEvalQueue_X(t *testing.T) {
 		},
 	})
 
-	e.Enqueue([]*proto.Duty{
+	e.Enqueue(ctx, []*proto.Duty{
 		{
 			Id:         "b",
 			ActiveTime: timestamppb.New(time.Now().Add(1 * time.Second)),
 		},
 	})
 
-	e.Enqueue([]*proto.Duty{
+	e.Enqueue(ctx, []*proto.Duty{
 		{
 			Id:         "c",
 			ActiveTime: timestamppb.New(time.Now().Add(1 * time.Second)),

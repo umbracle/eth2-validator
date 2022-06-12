@@ -32,6 +32,8 @@ type Config struct {
 
 	// Keymanager is the configuration for the keymanager
 	Keymanager map[string]map[string]interface{} `hcl:"keymanager"`
+
+	OtelEndpoint string
 }
 
 // DefaultConfig returns the default configuration for the agent

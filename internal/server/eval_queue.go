@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -17,6 +18,9 @@ type EvalQueue struct {
 
 	// unack is the list of not aknowledge duties
 	unack map[string]*proto.Duty
+
+	// map of duties to trace contexts
+	ctxMap map[string]context.Context
 
 	// blocked tracks the blocked duties
 	blocked map[string]*blockedDuty
@@ -45,6 +49,7 @@ func NewEvalQueue() *EvalQueue {
 		ready:             []*proto.Duty{},
 		updateCh:          make(chan struct{}),
 		reverseBlockedMap: map[string][]string{},
+		ctxMap:            map[string]context.Context{},
 	}
 	return e
 }
@@ -61,7 +66,7 @@ func (d *dutyWrapper) ID() string {
 	return d.eval.Id
 }
 
-func (p *EvalQueue) Enqueue(duties []*proto.Duty) {
+func (p *EvalQueue) Enqueue(ctx context.Context, duties []*proto.Duty) {
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -90,6 +95,8 @@ func (p *EvalQueue) Enqueue(duties []*proto.Duty) {
 			// not blocked, push right away to the heap
 			p.delayHeap.Push(&dutyWrapper{duty}, duty.ActiveTime.AsTime())
 		}
+		// add entry in the context map
+		p.ctxMap[duty.Id] = ctx
 	}
 
 	select {
@@ -98,7 +105,7 @@ func (p *EvalQueue) Enqueue(duties []*proto.Duty) {
 	}
 }
 
-func (p *EvalQueue) Dequeue() (*proto.Duty, error) {
+func (p *EvalQueue) Dequeue() (*proto.Duty, context.Context, error) {
 START:
 	p.l.Lock()
 	if len(p.ready) != 0 {
@@ -106,8 +113,15 @@ START:
 		var duty *proto.Duty
 		duty, p.ready = p.ready[0], p.ready[1:]
 		p.unack[duty.Id] = duty
+
+		ctx, ok := p.ctxMap[duty.Id]
+		if !ok {
+			p.l.Unlock()
+			return nil, nil, fmt.Errorf("context not found for task: %s", duty.Id)
+		}
+
 		p.l.Unlock()
-		return duty, nil
+		return duty, ctx, nil
 	}
 
 	p.l.Unlock()
@@ -116,7 +130,7 @@ START:
 	case <-p.updateCh:
 		goto START
 	case <-p.closeCh:
-		return nil, nil
+		return nil, nil, nil
 	}
 }
 
@@ -129,6 +143,7 @@ func (p *EvalQueue) Ack(dutyID string) error {
 		return fmt.Errorf("duty '%s' not found", dutyID)
 	}
 	delete(p.unack, dutyID)
+	delete(p.ctxMap, dutyID)
 
 	// unblock pending tasks
 	blockedDuties, ok := p.reverseBlockedMap[dutyID]

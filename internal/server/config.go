@@ -7,11 +7,12 @@ import (
 // Config is the parametrizable configuration of the
 // validator
 type Config struct {
-	DepositAddress string
-	Endpoint       string
-	BeaconConfig   *beacon.ChainConfig
-	GrpcAddr       string
-	PrivKey        []string
+	DepositAddress        string
+	Endpoint              string
+	BeaconConfig          *beacon.ChainConfig
+	GrpcAddr              string
+	PrivKey               []string
+	TelemetryOLTPExporter string
 }
 
 // DefaultConfig returns a default configuration

@@ -62,10 +62,14 @@ type Plan struct {
 	Duties []*Duty
 }
 
-func Uint64Root(num uint64) []byte {
+func Uint64SSZ(num uint64) []byte {
 	buf := make([]byte, 32)
 	binary.LittleEndian.PutUint64(buf, num)
 	return buf
+}
+
+func RootSSZ(root []byte) []byte {
+	return root
 }
 
 func (v *Validator) Key() (*bls.Key, error) {

@@ -1,6 +1,7 @@
 package scheduler
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -16,20 +17,22 @@ import (
 )
 
 type State interface {
-	Sign(domain proto.DomainType, account uint64, root []byte) ([]byte, error)
+	Sign(ctx context.Context, domain proto.DomainType, account uint64, root []byte) ([]byte, error)
 }
 
 type Scheduler struct {
 	logger hclog.Logger
+	ctx    context.Context
 	state  State
 	eval   *proto.Evaluation
 	duties []*proto.Duty
 	config *beacon.ChainConfig
 }
 
-func NewScheduler(logger hclog.Logger, state State, config *beacon.ChainConfig) *Scheduler {
+func NewScheduler(logger hclog.Logger, ctx context.Context, state State, config *beacon.ChainConfig) *Scheduler {
 	return &Scheduler{
 		logger: logger,
+		ctx:    ctx,
 		state:  state,
 		config: config,
 	}
@@ -41,6 +44,15 @@ func (s *Scheduler) atSlot(slot uint64) time.Time {
 
 func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 	s.eval = eval
+
+	slotDuration := time.Duration(s.config.SecondsPerSlot) * time.Second
+
+	// pre-compute the delays
+	var (
+		attestationDelay            = slotDuration / 3
+		attestationAggregationDelay = slotDuration * 2 / 3
+		syncCommitteeDelay          = slotDuration / 3
+	)
 
 	proposalDutiesBySlot := map[uint64]*proto.Duty{}
 
@@ -61,8 +73,6 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 	}
 
 	for _, attestation := range eval.Attestation {
-		timeToStart := s.atSlot(attestation.Slot)
-
 		raw, err := json.Marshal(attestation)
 		if err != nil {
 			return nil, err
@@ -71,7 +81,7 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 			Id:             uuid.Generate(),
 			Slot:           attestation.Slot,
 			Epoch:          eval.Epoch,
-			ActiveTime:     timestamppb.New(timeToStart),
+			ActiveTime:     timestamppb.New(s.atSlot(attestation.Slot).Add(attestationDelay)),
 			ValidatorIndex: uint64(attestation.ValidatorIndex),
 			Input: &anypb.Any{
 				Value: raw,
@@ -91,7 +101,7 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 				Id:             uuid.Generate(),
 				Slot:           attestation.Slot,
 				Epoch:          eval.Epoch,
-				ActiveTime:     timestamppb.New(timeToStart),
+				ActiveTime:     timestamppb.New(s.atSlot(attestation.Slot).Add(attestationAggregationDelay)),
 				ValidatorIndex: uint64(attestation.ValidatorIndex),
 				Job: &proto.Duty_AttestationAggregate{
 					AttestationAggregate: &proto.AttestationAggregate{},
@@ -111,13 +121,11 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 
 	for _, committee := range eval.Committee {
 		for slot := FirstSlot; slot < LastSlot; slot++ {
-			timeToStart := s.atSlot(slot)
-
 			committeDuty := &proto.Duty{
 				Id:             uuid.Generate(),
 				Slot:           slot,
 				Epoch:          eval.Epoch,
-				ActiveTime:     timestamppb.New(timeToStart),
+				ActiveTime:     timestamppb.New(s.atSlot(slot).Add(syncCommitteeDelay)),
 				Job:            &proto.Duty_SyncCommittee{},
 				ValidatorIndex: uint64(committee.ValidatorIndex),
 			}
@@ -140,9 +148,9 @@ func (s *Scheduler) isAttestatorAggregate(committeeSize uint64, slot uint64, acc
 		modulo = 1
 	}
 
-	slotRoot := proto.Uint64Root(slot)
+	slotRoot := proto.Uint64SSZ(slot)
 
-	signature, err := s.state.Sign(proto.DomainSelectionProofType, account, slotRoot)
+	signature, err := s.state.Sign(s.ctx, proto.DomainSelectionProofType, account, slotRoot)
 	if err != nil {
 		return false, fmt.Errorf("failed to sign attestation aggregate: %v", err)
 	}

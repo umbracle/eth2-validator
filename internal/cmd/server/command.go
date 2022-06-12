@@ -107,6 +107,7 @@ func buildValidatorConfig(c *Config) (*server.Config, error) {
 	cc.BeaconConfig = testConfig.GetChainConfig()
 	cc.Endpoint = c.Endpoint
 	cc.PrivKey = c.PrivKey
+	cc.TelemetryOLTPExporter = c.OtelEndpoint
 
 	return cc, nil
 }
@@ -126,6 +127,7 @@ func (c *Command) readConfig(args []string) (*Config, error) {
 	flags.StringVar(&cliConfig.BeaconChain, "beacon-chain", "", "")
 	flags.StringVar(&cliConfig.Endpoint, "endpoint", "", "")
 	flags.StringArrayVar(&cliConfig.PrivKey, "priv-key", []string{}, "")
+	flags.StringVar(&cliConfig.OtelEndpoint, "otel-endpoint", "", "")
 
 	if err := flags.Parse(args); err != nil {
 		return nil, err

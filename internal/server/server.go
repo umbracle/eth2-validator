@@ -17,6 +17,13 @@ import (
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/server/state"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
+	"github.com/umbracle/eth2-validator/internal/version"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.4.0"
 	"google.golang.org/grpc"
 )
 
@@ -61,6 +68,13 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 
 	logger.Info("validator started")
 	go v.run()
+
+	if config.TelemetryOLTPExporter != "" {
+		if err := v.setupTelemetry(); err != nil {
+			return nil, err
+		}
+	}
+
 	return v, nil
 }
 
@@ -77,7 +91,7 @@ func (v *Server) addValidator(privKey string) error {
 	pubKey := key.PubKey()
 	pubKeyStr := hex.EncodeToString(pubKey[:])
 
-	val, err := v.client.GetValidatorByPubKey("0x" + pubKeyStr)
+	val, err := v.client.GetValidatorByPubKey(context.Background(), "0x"+pubKeyStr)
 	if err != nil {
 		panic(err)
 	}
@@ -99,27 +113,30 @@ func (v *Server) addValidator(privKey string) error {
 
 func (v *Server) runWorker() {
 	for {
-		duty, err := v.evalQueue.Dequeue()
+		duty, ctx, err := v.evalQueue.Dequeue()
 		if err != nil {
 			panic(err)
 		}
 
 		v.logger.Info("handle duty", "id", duty.Id, "slot", duty.Slot, "validator", duty.ValidatorIndex, "typ", duty.Type())
 
-		go func(duty *proto.Duty) {
+		go func(ctx context.Context, duty *proto.Duty) {
+			ctx, span := otel.Tracer("Validator").Start(ctx, duty.Type())
+			defer span.End()
+
 			var job proto.DutyJob
 			switch duty.Job.(type) {
 			case *proto.Duty_BlockProposal:
-				job, err = v.runBlockProposal(duty)
+				job, err = v.runBlockProposal(ctx, duty)
 			case *proto.Duty_Attestation:
-				job, err = v.runSingleAttestation(duty)
+				job, err = v.runSingleAttestation(ctx, duty)
 			case *proto.Duty_AttestationAggregate:
-				job, err = v.runAttestationAggregate(duty)
+				job, err = v.runAttestationAggregate(ctx, duty)
 			case *proto.Duty_SyncCommittee:
-				job, err = v.runSyncCommittee(duty)
+				job, err = v.runSyncCommittee(ctx, duty)
 			}
 			if err != nil {
-				panic(err)
+				panic(fmt.Errorf("failed to handle %s: %v", duty.Type(), err))
 			}
 
 			// upsert the job on state
@@ -129,7 +146,7 @@ func (v *Server) runWorker() {
 			}
 
 			v.evalQueue.Ack(duty.Id)
-		}(duty)
+		}(ctx, duty)
 	}
 }
 
@@ -144,34 +161,14 @@ func (v *Server) run() {
 	go v.runWorker()
 }
 
-func uint64SSZ(epoch uint64) *ssz.Hasher {
-	hh := ssz.NewHasher()
-	indx := hh.Index()
-	hh.PutUint64(epoch)
-	hh.Merkleize(indx)
-	return hh
-}
-
-func signatureSSZ(sig []byte) *ssz.Hasher {
-	hh := ssz.NewHasher()
-	indx := hh.Index()
-	hh.PutBytes(sig)
-	hh.Merkleize(indx)
-	return hh
-}
-
-func (v *Server) runSyncCommittee(duty *proto.Duty) (proto.DutyJob, error) {
-	// TODO: hardcoded
-	time.Sleep(1 * time.Second)
-
+func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
 	// get root
-	latestRoot, err := v.client.GetHeadBlockRoot()
+	latestRoot, err := v.client.GetHeadBlockRoot(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	hh := signatureSSZ(latestRoot)
-	signature, err := v.signHash(v.config.BeaconConfig.DomainSyncCommittee, duty.ValidatorIndex, hh)
+	signature, err := v.Sign(ctx, proto.DomainSyncCommitteeType, duty.ValidatorIndex, proto.RootSSZ(latestRoot))
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +182,7 @@ func (v *Server) runSyncCommittee(duty *proto.Duty) (proto.DutyJob, error) {
 		},
 	}
 
-	if err := v.client.SubmitCommitteeDuties(committeeDuty); err != nil {
+	if err := v.client.SubmitCommitteeDuties(ctx, committeeDuty); err != nil {
 		return nil, err
 	}
 
@@ -196,30 +193,21 @@ func (v *Server) runSyncCommittee(duty *proto.Duty) (proto.DutyJob, error) {
 	return job, nil
 }
 
-func (v *Server) runSingleAttestation(duty *proto.Duty) (proto.DutyJob, error) {
-	// TODO: hardcoded
-	time.Sleep(1 * time.Second)
-
+func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
 	var attestationInput *beacon.AttesterDuty
 	if err := json.Unmarshal(duty.Input.Value, &attestationInput); err != nil {
 		return nil, err
 	}
-	attestationData, err := v.client.RequestAttestationData(duty.Slot, attestationInput.CommitteeIndex)
+	attestationData, err := v.client.RequestAttestationData(ctx, duty.Slot, attestationInput.CommitteeIndex)
+	if err != nil {
+		panic(err)
+	}
+	attestationRoot, err := attestationData.HashTreeRoot()
 	if err != nil {
 		return nil, err
 	}
 
-	indexed := &structs.IndexedAttestation{
-		AttestationIndices: []uint64{0},
-		Data:               attestationData,
-	}
-
-	hh := ssz.NewHasher()
-	if err := indexed.Data.HashTreeRootWith(hh); err != nil {
-		return nil, err
-	}
-
-	attestedSignature, err := v.signHash(v.config.BeaconConfig.DomainBeaconAttester, duty.ValidatorIndex, hh)
+	attestedSignature, err := v.Sign(ctx, proto.DomainBeaconAttesterType, duty.ValidatorIndex, attestationRoot[:])
 	if err != nil {
 		return nil, err
 	}
@@ -232,13 +220,8 @@ func (v *Server) runSingleAttestation(duty *proto.Duty) (proto.DutyJob, error) {
 		AggregationBits: bitlist,
 		Signature:       attestedSignature,
 	}
-	if err := v.client.PublishAttestations([]*structs.Attestation{attestation}); err != nil {
-		return nil, err
-	}
-
-	attestationRoot, err := attestationData.HashTreeRoot()
-	if err != nil {
-		return nil, err
+	if err := v.client.PublishAttestations(ctx, []*structs.Attestation{attestation}); err != nil {
+		panic(err)
 	}
 
 	// store the attestation in the state
@@ -258,9 +241,7 @@ func (v *Server) runSingleAttestation(duty *proto.Duty) (proto.DutyJob, error) {
 	return job, nil
 }
 
-func (v *Server) runAttestationAggregate(duty *proto.Duty) (proto.DutyJob, error) {
-	time.Sleep(1 * time.Second)
-
+func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
 	attestation, err := v.state.DutyByID(duty.BlockedBy[0])
 	if err != nil {
 		panic(err)
@@ -286,7 +267,7 @@ func (v *Server) runAttestationAggregate(duty *proto.Duty) (proto.DutyJob, error
 		return nil, err
 	}
 
-	aggregateAttestation, err := v.client.AggregateAttestation(duty.Slot, attestationRoot)
+	aggregateAttestation, err := v.client.AggregateAttestation(ctx, duty.Slot, attestationRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -302,8 +283,7 @@ func (v *Server) runAttestationAggregate(duty *proto.Duty) (proto.DutyJob, error
 		panic(err)
 	}
 
-	hh := signatureSSZ(aggregateAndProofRoot[:])
-	aggregateAndProofRootSignature, err := v.signHash(v.config.BeaconConfig.DomainAggregateAndProof, duty.ValidatorIndex, hh)
+	aggregateAndProofRootSignature, err := v.Sign(ctx, proto.DomainAggregateAndProofType, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot[:]))
 	if err != nil {
 		return nil, err
 	}
@@ -314,32 +294,31 @@ func (v *Server) runAttestationAggregate(duty *proto.Duty) (proto.DutyJob, error
 			Signature: aggregateAndProofRootSignature,
 		},
 	}
-	if err := v.client.PublishAggregateAndProof(req); err != nil {
+	if err := v.client.PublishAggregateAndProof(ctx, req); err != nil {
 		return nil, err
 	}
 	return &proto.Duty_AttestationAggregate{}, nil
 }
 
-func (v *Server) runBlockProposal(duty *proto.Duty) (proto.DutyJob, error) {
+func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
 	// create the randao
 
-	epochSSZ := uint64SSZ(duty.Epoch)
-	randaoReveal, err := v.signHash(v.config.BeaconConfig.DomainRandao, duty.ValidatorIndex, epochSSZ)
+	randaoReveal, err := v.Sign(ctx, proto.DomainRandaomType, duty.ValidatorIndex, proto.Uint64SSZ(duty.Epoch))
 	if err != nil {
 		return nil, err
 	}
 
-	block, err := v.client.GetBlock(duty.Slot, randaoReveal)
+	block, err := v.client.GetBlock(ctx, duty.Slot, randaoReveal)
 	if err != nil {
 		return nil, err
 	}
 
-	hh := ssz.NewHasher()
-	if err := block.HashTreeRootWith(hh); err != nil {
+	blockRoot, err := block.HashTreeRoot()
+	if err != nil {
 		return nil, err
 	}
 
-	blockSignature, err := v.signHash(v.config.BeaconConfig.DomainBeaconProposer, duty.ValidatorIndex, hh)
+	blockSignature, err := v.Sign(ctx, proto.DomainBeaconProposerType, duty.ValidatorIndex, blockRoot[:])
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +327,7 @@ func (v *Server) runBlockProposal(duty *proto.Duty) (proto.DutyJob, error) {
 		Signature: blockSignature,
 	}
 
-	if err := v.client.PublishSignedBlock(signedBlock); err != nil {
+	if err := v.client.PublishSignedBlock(ctx, signedBlock); err != nil {
 		return nil, err
 	}
 
@@ -361,47 +340,11 @@ func (v *Server) runBlockProposal(duty *proto.Duty) (proto.DutyJob, error) {
 	return job, nil
 }
 
-func (v *Server) signHash(domain structs.Domain, accountIndex uint64, obj *ssz.Hasher) ([]byte, error) {
-	genesis, err := v.client.Genesis(context.Background())
-	if err != nil {
-		return nil, err
-	}
+func (v *Server) Sign(ctx context.Context, domain proto.DomainType, accountIndex uint64, root []byte) ([]byte, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "Sign")
+	defer span.End()
 
-	ddd, err := v.config.BeaconConfig.ComputeDomain(domain, v.config.BeaconConfig.AltairForkVersion[:], genesis.Root)
-	if err != nil {
-		return nil, err
-	}
-
-	unsignedMsgRoot, err := obj.HashRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	rootToSign, err := ssz.HashWithDefaultHasher(&structs.SigningData{
-		ObjectRoot: unsignedMsgRoot[:],
-		Domain:     ddd,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	validator, err := v.state.GetValidatorByIndex(accountIndex)
-	if err != nil {
-		return nil, err
-	}
-	key, err := validator.Key()
-	if err != nil {
-		return nil, err
-	}
-	signature, err := key.Sign(rootToSign)
-	if err != nil {
-		return nil, err
-	}
-	return signature, nil
-}
-
-func (v *Server) Sign(domain proto.DomainType, accountIndex uint64, root []byte) ([]byte, error) {
-	genesis, err := v.client.Genesis(context.Background())
+	genesis, err := v.client.Genesis(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -439,6 +382,9 @@ func (v *Server) Sign(domain proto.DomainType, accountIndex uint64, root []byte)
 func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 	v.logger.Info("Schedule duties", "epoch", epoch)
 
+	ctx, span := otel.Tracer("Validator").Start(context.Background(), "Epoch")
+	defer span.End()
+
 	validators, err := v.state.GetValidatorsActiveAt(epoch)
 	if err != nil {
 		return err
@@ -452,12 +398,12 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 	}
 
 	// query duties for this epoch
-	attesterDuties, err := v.client.GetAttesterDuties(epoch, validatorsArray)
+	attesterDuties, err := v.client.GetAttesterDuties(ctx, epoch, validatorsArray)
 	if err != nil {
 		return err
 	}
 
-	fullProposerDuties, err := v.client.GetProposerDuties(epoch)
+	fullProposerDuties, err := v.client.GetProposerDuties(ctx, epoch)
 	if err != nil {
 		return err
 	}
@@ -468,7 +414,7 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 		}
 	}
 
-	committeeDuties, err := v.client.GetCommitteeSyncDuties(epoch, validatorsArray)
+	committeeDuties, err := v.client.GetCommitteeSyncDuties(ctx, epoch, validatorsArray)
 	if err != nil {
 		return err
 	}
@@ -481,13 +427,16 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 		GenesisTime: genesisTime,
 	}
 
-	sched := scheduler.NewScheduler(hclog.L(), v, v.config.BeaconConfig)
+	schedCtx, span := otel.Tracer("Validator").Start(ctx, "Scheduler")
+	defer span.End()
+
+	sched := scheduler.NewScheduler(v.logger.Named("scheduler"), schedCtx, v, v.config.BeaconConfig)
 	plan, err := sched.Process(eval)
 	if err != nil {
 		return err
 	}
 
-	v.evalQueue.Enqueue(plan.Duties)
+	v.evalQueue.Enqueue(ctx, plan.Duties)
 	return nil
 }
 
@@ -564,6 +513,51 @@ func (s *Server) loggingServerInterceptor(ctx context.Context, req interface{}, 
 	h, err := handler(ctx, req)
 	s.logger.Trace("Request", "method", info.FullMethod, "duration", time.Since(start), "error", err)
 	return h, err
+}
+
+func (s *Server) setupTelemetry() error {
+	s.logger.Info("Telemetry enabled", "otel-exporter", s.config.TelemetryOLTPExporter)
+
+	ctx := context.Background()
+
+	res, err := resource.New(ctx,
+		resource.WithAttributes(
+			semconv.ServiceNameKey.String("eth2-validator"),
+			semconv.ServiceVersionKey.String(version.GetVersion()),
+		),
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create open telemetry resource for service: %v", err)
+	}
+
+	var exporters []sdktrace.SpanExporter
+
+	// exporter for otel-collector
+	if s.config.TelemetryOLTPExporter != "" {
+		oltpExporter, err := otlptracegrpc.New(
+			ctx,
+			otlptracegrpc.WithInsecure(),
+			otlptracegrpc.WithEndpoint(s.config.TelemetryOLTPExporter),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create open telemetry tracer exporter for service: %v", err)
+		}
+		exporters = append(exporters, oltpExporter)
+	}
+
+	opts := []sdktrace.TracerProviderOption{
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+		sdktrace.WithResource(res),
+	}
+	for _, exporter := range exporters {
+		opts = append(opts, sdktrace.WithSyncer(exporter))
+	}
+	tracerProvider := sdktrace.NewTracerProvider(opts...)
+
+	otel.SetTracerProvider(tracerProvider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	return nil
 }
 
 func domainTypToDomain(typ proto.DomainType, config *beacon.ChainConfig) structs.Domain {

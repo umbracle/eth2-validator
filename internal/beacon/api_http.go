@@ -13,6 +13,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/r3labs/sse/v2"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
+	"go.opentelemetry.io/otel"
 )
 
 type HttpAPI struct {
@@ -182,7 +183,10 @@ type AttesterDuty struct {
 	ValidatorCommitteeIndex uint64 `json:"validator_committee_index"`
 }
 
-func (h *HttpAPI) GetAttesterDuties(epoch uint64, indexes []string) ([]*AttesterDuty, error) {
+func (h *HttpAPI) GetAttesterDuties(ctx context.Context, epoch uint64, indexes []string) ([]*AttesterDuty, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "GetAttesterDuties")
+	defer span.End()
+
 	var out []*AttesterDuty
 	err := h.post(fmt.Sprintf("/eth/v1/validator/duties/attester/%d", epoch), indexes, &out)
 	return out, err
@@ -194,7 +198,10 @@ type ProposerDuty struct {
 	Slot           uint64 `json:"slot"`
 }
 
-func (h *HttpAPI) GetProposerDuties(epoch uint64) ([]*ProposerDuty, error) {
+func (h *HttpAPI) GetProposerDuties(ctx context.Context, epoch uint64) ([]*ProposerDuty, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "GetProposerDuties")
+	defer span.End()
+
 	var out []*ProposerDuty
 	err := h.get(fmt.Sprintf("/eth/v1/validator/duties/proposer/%d", epoch), &out)
 	return out, err
@@ -206,7 +213,10 @@ type CommitteeSyncDuty struct {
 	ValidatorSyncCommitteeIndices []string `json:"validator_sync_committee_indices"`
 }
 
-func (h *HttpAPI) GetCommitteeSyncDuties(epoch uint64, indexes []string) ([]*CommitteeSyncDuty, error) {
+func (h *HttpAPI) GetCommitteeSyncDuties(ctx context.Context, epoch uint64, indexes []string) ([]*CommitteeSyncDuty, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "GetCommitteeSyncDuties")
+	defer span.End()
+
 	var out []*CommitteeSyncDuty
 	err := h.post(fmt.Sprintf("/eth/v1/validator/duties/sync/%d", epoch), indexes, &out)
 	return out, err
@@ -219,7 +229,10 @@ type SyncCommitteeMessage struct {
 	Signature      []byte `json:"signature"`
 }
 
-func (h *HttpAPI) SubmitCommitteeDuties(duties []*SyncCommitteeMessage) error {
+func (h *HttpAPI) SubmitCommitteeDuties(ctx context.Context, duties []*SyncCommitteeMessage) error {
+	_, span := otel.Tracer("Validator").Start(ctx, "SubmitCommitteeDuties")
+	defer span.End()
+
 	err := h.post("/eth/v1/beacon/pool/sync_committees", duties, nil)
 	return err
 }
@@ -237,13 +250,19 @@ type Validator struct {
 	} `json:"validator"`
 }
 
-func (h *HttpAPI) GetValidatorByPubKey(pub string) (*Validator, error) {
+func (h *HttpAPI) GetValidatorByPubKey(ctx context.Context, pub string) (*Validator, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "GetValidatorByPubKey")
+	defer span.End()
+
 	var out *Validator
 	h.get("/eth/v1/beacon/states/head/validators/"+pub, &out)
 	return out, nil
 }
 
-func (h *HttpAPI) GetBlock(slot uint64, randao []byte) (*structs.BeaconBlock, error) {
+func (h *HttpAPI) GetBlock(ctx context.Context, slot uint64, randao []byte) (*structs.BeaconBlock, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "GetBlock")
+	defer span.End()
+
 	buf := "0x" + hex.EncodeToString(randao)
 
 	var out *structs.BeaconBlock
@@ -252,23 +271,35 @@ func (h *HttpAPI) GetBlock(slot uint64, randao []byte) (*structs.BeaconBlock, er
 	return out, err
 }
 
-func (h *HttpAPI) PublishSignedBlock(block *structs.SignedBeaconBlock) error {
+func (h *HttpAPI) PublishSignedBlock(ctx context.Context, block *structs.SignedBeaconBlock) error {
+	_, span := otel.Tracer("Validator").Start(ctx, "PublishSignedBlock")
+	defer span.End()
+
 	err := h.post("/eth/v1/beacon/blocks", block, nil)
 	return err
 }
 
-func (h *HttpAPI) RequestAttestationData(slot uint64, committeeIndex uint64) (*structs.AttestationData, error) {
+func (h *HttpAPI) RequestAttestationData(ctx context.Context, slot uint64, committeeIndex uint64) (*structs.AttestationData, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "RequestAttestationData")
+	defer span.End()
+
 	var out *structs.AttestationData
 	err := h.get(fmt.Sprintf("/eth/v1/validator/attestation_data?slot=%d&committee_index=%d", slot, committeeIndex), &out)
 	return out, err
 }
 
-func (h *HttpAPI) PublishAttestations(data []*structs.Attestation) error {
+func (h *HttpAPI) PublishAttestations(ctx context.Context, data []*structs.Attestation) error {
+	_, span := otel.Tracer("Validator").Start(ctx, "PublishAttestations")
+	defer span.End()
+
 	err := h.post("/eth/v1/beacon/pool/attestations", data, nil)
 	return err
 }
 
-func (h *HttpAPI) AggregateAttestation(slot uint64, root [32]byte) (*structs.Attestation, error) {
+func (h *HttpAPI) AggregateAttestation(ctx context.Context, slot uint64, root [32]byte) (*structs.Attestation, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "AggregateAttestation")
+	defer span.End()
+
 	var out *structs.Attestation
 	err := h.get(fmt.Sprintf("/eth/v1/validator/aggregate_attestation?slot=%d&attestation_data_root=0x%s", slot, hex.EncodeToString(root[:])), &out)
 	return out, err
@@ -279,12 +310,18 @@ type SignedAggregateAndProof struct {
 	Signature []byte                     `json:"signature" ssz-size:"96"`
 }
 
-func (h *HttpAPI) PublishAggregateAndProof(data []*SignedAggregateAndProof) error {
+func (h *HttpAPI) PublishAggregateAndProof(ctx context.Context, data []*SignedAggregateAndProof) error {
+	_, span := otel.Tracer("Validator").Start(ctx, "PublishAggregateAndProof")
+	defer span.End()
+
 	err := h.post("/eth/v1/validator/aggregate_and_proofs", data, nil)
 	return err
 }
 
-func (h *HttpAPI) GetHeadBlockRoot() ([]byte, error) {
+func (h *HttpAPI) GetHeadBlockRoot(ctx context.Context) ([]byte, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "GetHeadBlockRoot")
+	defer span.End()
+
 	var data struct {
 		Root []byte
 	}
