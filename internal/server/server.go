@@ -29,13 +29,14 @@ import (
 
 // Server is a validator in the eth2.0 network
 type Server struct {
-	config     *Config
-	state      *state.State
-	logger     hclog.Logger
-	shutdownCh chan struct{}
-	client     *beacon.HttpAPI
-	grpcServer *grpc.Server
-	evalQueue  *EvalQueue
+	config       *Config
+	state        *state.State
+	logger       hclog.Logger
+	shutdownCh   chan struct{}
+	client       *beacon.HttpAPI
+	grpcServer   *grpc.Server
+	evalQueue    *EvalQueue
+	beaconConfig *beacon.ChainConfig
 }
 
 // NewServer starts a new validator
@@ -59,6 +60,12 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 
 	v.client = beacon.NewHttpAPI(config.Endpoint)
 	v.client.SetLogger(logger)
+
+	beaconConfig, err := v.client.ConfigSpec()
+	if err != nil {
+		return nil, err
+	}
+	v.beaconConfig = beaconConfig
 
 	for _, privKey := range config.PrivKey {
 		if err := v.addValidator(privKey); err != nil {
@@ -349,9 +356,11 @@ func (v *Server) Sign(ctx context.Context, domain proto.DomainType, accountIndex
 		return nil, err
 	}
 
-	domainVal := domainTypToDomain(domain, v.config.BeaconConfig)
+	domainVal := domainTypToDomain(domain, v.beaconConfig)
 
-	ddd, err := v.config.BeaconConfig.ComputeDomain(domainVal, v.config.BeaconConfig.AltairForkVersion[:], genesis.Root)
+	fmt.Println("sign", domain, domainVal, accountIndex, root)
+
+	ddd, err := v.beaconConfig.ComputeDomain(domainVal, v.beaconConfig.AltairForkVersion[:], genesis.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +439,7 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 	schedCtx, span := otel.Tracer("Validator").Start(ctx, "Scheduler")
 	defer span.End()
 
-	sched := scheduler.NewScheduler(v.logger.Named("scheduler"), schedCtx, v, v.config.BeaconConfig)
+	sched := scheduler.NewScheduler(v.logger.Named("scheduler"), schedCtx, v, v.beaconConfig)
 	plan, err := sched.Process(eval)
 	if err != nil {
 		return err
@@ -448,7 +457,7 @@ func (v *Server) watchDuties() {
 
 	genesisTime := time.Unix(int64(genesis.Time), 0)
 
-	bb := newBeaconTracker(v.logger, genesisTime, v.config.BeaconConfig.SecondsPerSlot, v.config.BeaconConfig.SlotsPerEpoch)
+	bb := newBeaconTracker(v.logger, genesisTime, v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
 	go bb.run()
 
 	// wait for the ready channel to be closed
@@ -463,7 +472,7 @@ func (v *Server) watchDuties() {
 
 			go func() {
 				if err := v.handleNewEpoch(genesisTime, res.Epoch); err != nil {
-					v.logger.Error("failed to schedule epoch", "epoch", res.Epoch, "err")
+					v.logger.Error("failed to schedule epoch", "epoch", res.Epoch, "err", err)
 				}
 			}()
 

@@ -92,26 +92,28 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 		}
 		duties = append(duties, attestationDuty)
 
-		isAggregate, err := s.isAttestatorAggregate(attestation.CommitteeLength, attestation.Slot, 0)
+		isAggregate, err := s.isAttestatorAggregate(attestation.CommitteeLength, attestation.Slot, uint64(attestation.ValidatorIndex))
 		if err != nil {
 			return nil, err
 		}
 		if isAggregate {
-			aggregationDuty := &proto.Duty{
-				Id:             uuid.Generate(),
-				Slot:           attestation.Slot,
-				Epoch:          eval.Epoch,
-				ActiveTime:     timestamppb.New(s.atSlot(attestation.Slot).Add(attestationAggregationDelay)),
-				ValidatorIndex: uint64(attestation.ValidatorIndex),
-				Job: &proto.Duty_AttestationAggregate{
-					AttestationAggregate: &proto.AttestationAggregate{},
-				},
-				BlockedBy: []string{
-					attestationDuty.Id,
-					proposalDutiesBySlot[attestation.Slot].Id,
-				},
+			if proposal, ok := proposalDutiesBySlot[attestation.Slot]; ok {
+				aggregationDuty := &proto.Duty{
+					Id:             uuid.Generate(),
+					Slot:           attestation.Slot,
+					Epoch:          eval.Epoch,
+					ActiveTime:     timestamppb.New(s.atSlot(attestation.Slot).Add(attestationAggregationDelay)),
+					ValidatorIndex: uint64(attestation.ValidatorIndex),
+					Job: &proto.Duty_AttestationAggregate{
+						AttestationAggregate: &proto.AttestationAggregate{},
+					},
+					BlockedBy: []string{
+						attestationDuty.Id,
+						proposal.Id,
+					},
+				}
+				duties = append(duties, aggregationDuty)
 			}
-			duties = append(duties, aggregationDuty)
 		}
 
 	}

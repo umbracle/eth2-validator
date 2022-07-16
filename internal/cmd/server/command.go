@@ -15,8 +15,6 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/mitchellh/cli"
 	"github.com/umbracle/eth2-validator/internal/server"
-	"github.com/umbracle/eth2-validator/internal/server/structs"
-	"github.com/umbracle/eth2-validator/internal/testutil"
 )
 
 // Command is the command that starts the agent
@@ -96,17 +94,7 @@ func (c *Command) handleSignals() int {
 }
 
 func buildValidatorConfig(c *Config) (*server.Config, error) {
-	testConfig := &testutil.Eth2Spec{
-		Forks: testutil.Forks{
-			Altair: testutil.ForkSpec{
-				Epoch:   1,
-				Version: structs.Domain{0x2, 0x0, 0x0, 0x0},
-			},
-		},
-	}
-
 	cc := server.DefaultConfig()
-	cc.BeaconConfig = testConfig.GetChainConfig()
 	cc.Endpoint = c.Endpoint
 	cc.TelemetryOLTPExporter = c.OtelEndpoint
 

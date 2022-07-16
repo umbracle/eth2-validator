@@ -7,6 +7,7 @@ import (
 )
 
 func TestConfig_ReadMainnet(t *testing.T) {
-	_, err := ReadChainConfig("")
+	config, err := ReadChainConfig("")
 	assert.NoError(t, err)
+	assert.NotZero(t, config.SlotsPerEpoch)
 }
