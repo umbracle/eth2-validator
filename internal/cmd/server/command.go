@@ -2,8 +2,10 @@ package server
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -106,8 +108,16 @@ func buildValidatorConfig(c *Config) (*server.Config, error) {
 	cc := server.DefaultConfig()
 	cc.BeaconConfig = testConfig.GetChainConfig()
 	cc.Endpoint = c.Endpoint
-	cc.PrivKey = c.PrivKey
 	cc.TelemetryOLTPExporter = c.OtelEndpoint
+
+	// read the private keys in the viewpoint format
+	if c.PrivKey != "" {
+		buf, err := ioutil.ReadFile(c.PrivKey)
+		if err != nil {
+			return nil, err
+		}
+		cc.PrivKey = strings.Split(string(buf), "\n")
+	}
 
 	return cc, nil
 }
@@ -126,7 +136,7 @@ func (c *Command) readConfig(args []string) (*Config, error) {
 	flags.BoolVar(&cliConfig.Debug, "debug", false, "")
 	flags.StringVar(&cliConfig.BeaconChain, "beacon-chain", "", "")
 	flags.StringVar(&cliConfig.Endpoint, "endpoint", "", "")
-	flags.StringArrayVar(&cliConfig.PrivKey, "priv-key", []string{}, "")
+	flags.StringVar(&cliConfig.PrivKey, "priv-key", "", "")
 	flags.StringVar(&cliConfig.OtelEndpoint, "otel-endpoint", "", "")
 
 	if err := flags.Parse(args); err != nil {

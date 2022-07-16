@@ -1,3 +1,4 @@
 bin
 pkg
 eth2.0-spec-tests
+e2e-test*
