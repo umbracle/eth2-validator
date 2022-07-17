@@ -29,13 +29,14 @@ import (
 
 // Server is a validator in the eth2.0 network
 type Server struct {
-	config     *Config
-	state      *state.State
-	logger     hclog.Logger
-	shutdownCh chan struct{}
-	client     *beacon.HttpAPI
-	grpcServer *grpc.Server
-	evalQueue  *EvalQueue
+	config       *Config
+	state        *state.State
+	logger       hclog.Logger
+	shutdownCh   chan struct{}
+	client       *beacon.HttpAPI
+	grpcServer   *grpc.Server
+	evalQueue    *EvalQueue
+	beaconConfig *beacon.ChainConfig
 }
 
 // NewServer starts a new validator
@@ -59,6 +60,12 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 
 	v.client = beacon.NewHttpAPI(config.Endpoint)
 	v.client.SetLogger(logger)
+
+	beaconConfig, err := v.client.ConfigSpec()
+	if err != nil {
+		return nil, err
+	}
+	v.beaconConfig = beaconConfig
 
 	for _, privKey := range config.PrivKey {
 		if err := v.addValidator(privKey); err != nil {
@@ -165,10 +172,10 @@ func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (proto.
 	// get root
 	latestRoot, err := v.client.GetHeadBlockRoot(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get head block root: %v", err)
 	}
 
-	signature, err := v.Sign(ctx, proto.DomainSyncCommitteeType, duty.ValidatorIndex, proto.RootSSZ(latestRoot))
+	signature, err := v.Sign(ctx, proto.DomainSyncCommitteeType, duty.Epoch, duty.ValidatorIndex, proto.RootSSZ(latestRoot))
 	if err != nil {
 		return nil, err
 	}
@@ -183,7 +190,7 @@ func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (proto.
 	}
 
 	if err := v.client.SubmitCommitteeDuties(ctx, committeeDuty); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to submit committee duties: %v", err)
 	}
 
 	// store the attestation in the state
@@ -207,7 +214,7 @@ func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (pr
 		return nil, err
 	}
 
-	attestedSignature, err := v.Sign(ctx, proto.DomainBeaconAttesterType, duty.ValidatorIndex, attestationRoot[:])
+	attestedSignature, err := v.Sign(ctx, proto.DomainBeaconAttesterType, duty.Epoch, duty.ValidatorIndex, attestationRoot[:])
 	if err != nil {
 		return nil, err
 	}
@@ -246,15 +253,7 @@ func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) 
 	if err != nil {
 		panic(err)
 	}
-	blockProposal, err := v.state.DutyByID(duty.BlockedBy[1])
-	if err != nil {
-		panic(err)
-	}
 
-	blockSlotSig, err := hex.DecodeString(blockProposal.Job.(*proto.Duty_BlockProposal).BlockProposal.Signature)
-	if err != nil {
-		panic(err)
-	}
 	attestationRootC, err := hex.DecodeString(attestation.Job.(*proto.Duty_Attestation).Attestation.Root)
 	if err != nil {
 		panic(err)
@@ -262,28 +261,28 @@ func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) 
 	attestationRoot := [32]byte{}
 	copy(attestationRoot[:], attestationRootC)
 
-	var attestationDuty *beacon.AttesterDuty
-	if err := json.Unmarshal(attestation.Input.Value, &attestationDuty); err != nil {
-		return nil, err
+	selectionProof, err := hex.DecodeString(duty.GetAttestationAggregate().SelectionProof)
+	if err != nil {
+		panic(err)
 	}
 
 	aggregateAttestation, err := v.client.AggregateAttestation(ctx, duty.Slot, attestationRoot)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to aggregate attestation: %v", err)
 	}
 
 	// Sign the aggregate attestation.
 	aggregateAndProof := &structs.AggregateAndProof{
-		Index:          uint64(attestationDuty.ValidatorIndex),
+		Index:          duty.ValidatorIndex,
 		Aggregate:      aggregateAttestation,
-		SelectionProof: blockSlotSig,
+		SelectionProof: selectionProof,
 	}
 	aggregateAndProofRoot, err := aggregateAndProof.HashTreeRoot()
 	if err != nil {
 		panic(err)
 	}
 
-	aggregateAndProofRootSignature, err := v.Sign(ctx, proto.DomainAggregateAndProofType, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot[:]))
+	aggregateAndProofRootSignature, err := v.Sign(ctx, proto.DomainAggregateAndProofType, duty.Epoch, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot[:]))
 	if err != nil {
 		return nil, err
 	}
@@ -295,7 +294,7 @@ func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) 
 		},
 	}
 	if err := v.client.PublishAggregateAndProof(ctx, req); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to publish aggregate and proof: %v", err)
 	}
 	return &proto.Duty_AttestationAggregate{}, nil
 }
@@ -303,7 +302,7 @@ func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) 
 func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
 	// create the randao
 
-	randaoReveal, err := v.Sign(ctx, proto.DomainRandaomType, duty.ValidatorIndex, proto.Uint64SSZ(duty.Epoch))
+	randaoReveal, err := v.Sign(ctx, proto.DomainRandaomType, duty.Epoch, duty.ValidatorIndex, proto.Uint64SSZ(duty.Epoch))
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +317,7 @@ func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (proto.
 		return nil, err
 	}
 
-	blockSignature, err := v.Sign(ctx, proto.DomainBeaconProposerType, duty.ValidatorIndex, blockRoot[:])
+	blockSignature, err := v.Sign(ctx, proto.DomainBeaconProposerType, duty.Epoch, duty.ValidatorIndex, blockRoot[:])
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +339,7 @@ func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (proto.
 	return job, nil
 }
 
-func (v *Server) Sign(ctx context.Context, domain proto.DomainType, accountIndex uint64, root []byte) ([]byte, error) {
+func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64, accountIndex uint64, root []byte) ([]byte, error) {
 	_, span := otel.Tracer("Validator").Start(ctx, "Sign")
 	defer span.End()
 
@@ -349,9 +348,18 @@ func (v *Server) Sign(ctx context.Context, domain proto.DomainType, accountIndex
 		return nil, err
 	}
 
-	domainVal := domainTypToDomain(domain, v.config.BeaconConfig)
+	var forkVersion []byte
+	if v.beaconConfig.BellatrixForkEpoch <= epoch {
+		forkVersion = v.beaconConfig.BellatrixForkVersion[:]
+	} else if v.beaconConfig.AltairForkEpoch <= epoch {
+		forkVersion = v.beaconConfig.AltairForkVersion[:]
+	} else {
+		forkVersion = v.beaconConfig.GenesisForkVersion[:]
+	}
 
-	ddd, err := v.config.BeaconConfig.ComputeDomain(domainVal, v.config.BeaconConfig.AltairForkVersion[:], genesis.Root)
+	domainVal := domainTypToDomain(domain, v.beaconConfig)
+
+	ddd, err := v.beaconConfig.ComputeDomain(domainVal, forkVersion, genesis.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -430,7 +438,7 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 	schedCtx, span := otel.Tracer("Validator").Start(ctx, "Scheduler")
 	defer span.End()
 
-	sched := scheduler.NewScheduler(v.logger.Named("scheduler"), schedCtx, v, v.config.BeaconConfig)
+	sched := scheduler.NewScheduler(v.logger.Named("scheduler"), schedCtx, v, v.beaconConfig)
 	plan, err := sched.Process(eval)
 	if err != nil {
 		return err
@@ -448,7 +456,7 @@ func (v *Server) watchDuties() {
 
 	genesisTime := time.Unix(int64(genesis.Time), 0)
 
-	bb := newBeaconTracker(v.logger, genesisTime, v.config.BeaconConfig.SecondsPerSlot, v.config.BeaconConfig.SlotsPerEpoch)
+	bb := newBeaconTracker(v.logger, genesisTime, v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
 	go bb.run()
 
 	// wait for the ready channel to be closed
@@ -463,7 +471,7 @@ func (v *Server) watchDuties() {
 
 			go func() {
 				if err := v.handleNewEpoch(genesisTime, res.Epoch); err != nil {
-					v.logger.Error("failed to schedule epoch", "epoch", res.Epoch, "err")
+					v.logger.Error("failed to schedule epoch", "epoch", res.Epoch, "err", err)
 				}
 			}()
 
@@ -577,7 +585,8 @@ func domainTypToDomain(typ proto.DomainType, config *beacon.ChainConfig) structs
 	case proto.DomainAggregateAndProofType:
 		return config.DomainAggregateAndProof
 	case proto.DomainSyncCommitteeType:
-		return config.DomainSyncCommittee
+		// FIX: lighthouse does not return this constant value
+		return structs.Domain{7, 0, 0, 0}
 	default:
 		panic(fmt.Errorf("domain typ not found: %s", typ))
 	}

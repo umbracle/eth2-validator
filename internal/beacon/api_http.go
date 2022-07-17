@@ -50,6 +50,9 @@ func (h *HttpAPI) post(path string, input interface{}, out interface{}) error {
 		if err != nil {
 			return err
 		}
+		if string(data) == `{"data":null}` {
+			return nil
+		}
 		if string(data) == "null" {
 			return nil
 		}
@@ -327,4 +330,10 @@ func (h *HttpAPI) GetHeadBlockRoot(ctx context.Context) ([]byte, error) {
 	}
 	err := h.get("/eth/v1/beacon/blocks/head/root", &data)
 	return data.Root, err
+}
+
+func (h *HttpAPI) ConfigSpec() (*ChainConfig, error) {
+	var config *ChainConfig
+	err := h.get("/eth/v1/config/spec", &config)
+	return config, err
 }

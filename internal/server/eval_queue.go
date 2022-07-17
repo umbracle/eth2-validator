@@ -159,9 +159,14 @@ func (p *EvalQueue) Ack(dutyID string) error {
 
 			delete(found.Blocked, dutyID)
 			if len(found.Blocked) == 0 {
-				// enqueue the task
 				delete(p.blocked, duty)
-				p.enqueueLocked(found.Duty)
+
+				// enqueue the task in the delay heap
+				p.delayHeap.Push(&dutyWrapper{found.Duty}, found.Duty.ActiveTime.AsTime())
+				select {
+				case p.delayUpdateCh <- struct{}{}:
+				default:
+				}
 			}
 		}
 	}

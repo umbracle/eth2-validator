@@ -118,7 +118,7 @@ func Unmarshal(data []byte, obj interface{}) error {
 	if len(metadata.Unused) != 0 {
 		// this migth help to untrack errors on some keys that are not being tracked
 		// and we really need.
-		return fmt.Errorf("unmarshal error unused keys: %s", metadata.Unused)
+		//return fmt.Errorf("unmarshal error unused keys: %s", metadata.Unused)
 	}
 	return nil
 }

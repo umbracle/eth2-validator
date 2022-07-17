@@ -16,27 +16,24 @@ func TestEvalQueue_X(t *testing.T) {
 	e := NewEvalQueue()
 	e.Start()
 
-	e.Enqueue(ctx, []*proto.Duty{
+	duties := []*proto.Duty{
 		{
 			Id:         "a",
-			ActiveTime: timestamppb.New(time.Now().Add(1 * time.Second)),
+			ActiveTime: timestamppb.New(time.Now().Add(5 * time.Second)),
 			BlockedBy:  []string{"b", "c"},
 		},
-	})
-
-	e.Enqueue(ctx, []*proto.Duty{
 		{
 			Id:         "b",
 			ActiveTime: timestamppb.New(time.Now().Add(1 * time.Second)),
 		},
-	})
-
-	e.Enqueue(ctx, []*proto.Duty{
 		{
 			Id:         "c",
 			ActiveTime: timestamppb.New(time.Now().Add(1 * time.Second)),
 		},
-	})
+	}
+	for _, duty := range duties {
+		e.Enqueue(ctx, []*proto.Duty{duty})
+	}
 
 	fmt.Println(e.Dequeue())
 
