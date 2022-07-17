@@ -50,6 +50,9 @@ func (h *HttpAPI) post(path string, input interface{}, out interface{}) error {
 		if err != nil {
 			return err
 		}
+		if string(data) == `{"data":null}` {
+			return nil
+		}
 		if string(data) == "null" {
 			return nil
 		}

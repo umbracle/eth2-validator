@@ -66,6 +66,7 @@ message Attestation {
 }
 
 message AttestationAggregate {
+    string selectionProof = 1;
 }
 
 message SyncCommittee {
