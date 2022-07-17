@@ -72,22 +72,22 @@ func TestState_InsertDuty(t *testing.T) {
 func TestState_ValidatorWorkflow(t *testing.T) {
 	state := newTestState(t)
 
-	val := &proto.Validator{
-		PubKey:          "a",
-		Index:           1,
-		ActivationEpoch: 5,
+	validators := []*proto.Validator{
+		{PubKey: "a", Index: 1, ActivationEpoch: 0},
+		{PubKey: "b", Index: 2, ActivationEpoch: 0},
+		{PubKey: "c", Index: 3, ActivationEpoch: 2},
+		{PubKey: "d", Index: 4, ActivationEpoch: 5},
 	}
-	assert.NoError(t, state.UpsertValidator(val))
-
-	val = &proto.Validator{
-		PubKey:          "b",
-		Index:           2,
-		ActivationEpoch: 2,
+	for _, val := range validators {
+		assert.NoError(t, state.UpsertValidator(val))
 	}
-	assert.NoError(t, state.UpsertValidator(val))
 
-	vals, err := state.GetValidatorsActiveAt(4)
+	vals, err := state.GetValidatorsActiveAt(0)
 	assert.NoError(t, err)
-	assert.Len(t, vals, 1)
-	assert.Equal(t, vals[0].Index, uint64(2))
+	assert.Len(t, vals, 2)
+	assert.Equal(t, vals[0].Index, uint64(1))
+
+	vals, err = state.GetValidatorsActiveAt(2)
+	assert.NoError(t, err)
+	assert.Len(t, vals, 3)
 }

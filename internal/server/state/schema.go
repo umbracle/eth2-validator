@@ -19,7 +19,6 @@ var schema = &memdb.DBSchema{
 				},
 				"type": {
 					Name:    "type",
-					Unique:  false,
 					Indexer: &IndexJob{},
 				},
 			},
@@ -34,12 +33,10 @@ var schema = &memdb.DBSchema{
 				},
 				"index": {
 					Name:    "index",
-					Unique:  false,
 					Indexer: &memdb.UintFieldIndex{Field: "Index"},
 				},
 				"activationEpoch": {
 					Name:    "activationEpoch",
-					Unique:  false,
 					Indexer: &memdb.UintFieldIndex{Field: "ActivationEpoch"},
 				},
 			},

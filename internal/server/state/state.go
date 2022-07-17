@@ -89,7 +89,14 @@ func (s *State) GetValidatorsActiveAt(epoch uint64) ([]*proto.Validator, error) 
 	txn := s.memdb.Txn(false)
 	defer txn.Abort()
 
-	it, err := txn.ReverseLowerBound("validators", "activationEpoch", epoch)
+	var it memdb.ResultIterator
+	var err error
+
+	if epoch == 0 {
+		it, err = txn.Get("validators", "activationEpoch", uint64(0))
+	} else {
+		it, err = txn.ReverseLowerBound("validators", "activationEpoch", epoch+1)
+	}
 	if err != nil {
 		return nil, err
 	}
