@@ -12,10 +12,11 @@ import (
 type DutyType string
 
 const (
-	DutyBlockProposal        = "block-proposal"
-	DutyAttestation          = "attestation"
-	DutyAttestationAggregate = "attesation-aggregate"
-	DutySyncCommittee        = "sync-committee"
+	DutyBlockProposal          = "block-proposal"
+	DutyAttestation            = "attestation"
+	DutyAttestationAggregate   = "attesation-aggregate"
+	DutySyncCommittee          = "sync-committee"
+	DutySyncCommitteeAggregate = "sync-committee-aggregate"
 )
 
 func (d *Duty) Type() string {
@@ -28,6 +29,8 @@ func (d *Duty) Type() string {
 		return DutyAttestationAggregate
 	case *Duty_SyncCommittee:
 		return DutySyncCommittee
+	case *Duty_SyncCommitteeAggregate:
+		return DutySyncCommitteeAggregate
 	default:
 		panic("BUG")
 	}
@@ -40,14 +43,16 @@ type DutyJob interface {
 type DomainType string
 
 const (
-	DomainBeaconProposerType    DomainType = "beacon-proposer"
-	DomainRandaomType           DomainType = "randao"
-	DomainBeaconAttesterType    DomainType = "beacon-attester"
-	DomainDepositType           DomainType = "deposit"
-	DomainVoluntaryExitType     DomainType = "voluntary-exit"
-	DomainSelectionProofType    DomainType = "selection-proof"
-	DomainAggregateAndProofType DomainType = "aggregate-and-proof"
-	DomainSyncCommitteeType     DomainType = "sync-committee"
+	DomainBeaconProposerType          DomainType = "beacon-proposer"
+	DomainRandaomType                 DomainType = "randao"
+	DomainBeaconAttesterType          DomainType = "beacon-attester"
+	DomainDepositType                 DomainType = "deposit"
+	DomainVoluntaryExitType           DomainType = "voluntary-exit"
+	DomainSelectionProofType          DomainType = "selection-proof"
+	DomainAggregateAndProofType       DomainType = "aggregate-and-proof"
+	DomainSyncCommitteeType           DomainType = "sync-committee"
+	DomainSyncCommitteeSelectionProof DomainType = "sync-committee-selection-proof"
+	DomainContributionAndProof        DomainType = "contribution-and-proof"
 )
 
 type Evaluation struct {

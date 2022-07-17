@@ -45,6 +45,7 @@ message Duty {
         Attestation Attestation = 21;
         AttestationAggregate AttestationAggregate = 22;
         SyncCommittee SyncCommittee = 23;
+        SyncCommitteeAggregate SyncCommitteeAggregate = 24;
     }
 }
 
@@ -70,6 +71,11 @@ message AttestationAggregate {
 }
 
 message SyncCommittee {
+}
+
+message SyncCommitteeAggregate {
+    string selectionProof = 1;
+    uint64 subCommitteeIndex = 2;
 }
 
 message Validator {

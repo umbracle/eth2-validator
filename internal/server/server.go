@@ -141,6 +141,8 @@ func (v *Server) runWorker() {
 				job, err = v.runAttestationAggregate(ctx, duty)
 			case *proto.Duty_SyncCommittee:
 				job, err = v.runSyncCommittee(ctx, duty)
+			case *proto.Duty_SyncCommitteeAggregate:
+				job, err = v.runSyncCommitteeAggregate(ctx, duty)
 			}
 			if err != nil {
 				panic(fmt.Errorf("failed to handle %s: %v", duty.Type(), err))
@@ -166,6 +168,53 @@ func (v *Server) run() {
 
 	// run the worker
 	go v.runWorker()
+}
+
+func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
+	job := duty.Job.(*proto.Duty_SyncCommitteeAggregate).SyncCommitteeAggregate
+
+	latestRoot, err := v.client.GetHeadBlockRoot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get head block root: %v", err)
+	}
+
+	contribution, err := v.client.SyncCommitteeContribution(ctx, duty.Slot, job.SubCommitteeIndex, latestRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sync committee contribution: %v", err)
+	}
+
+	selectionProof, err := hex.DecodeString(job.SelectionProof)
+	if err != nil {
+		panic(err)
+	}
+
+	contributionAggregate := &structs.ContributionAndProof{
+		AggregatorIndex: duty.ValidatorIndex,
+		Contribution:    contribution,
+		SelectionProof:  selectionProof,
+	}
+	root, err := contributionAggregate.HashTreeRoot()
+	if err != nil {
+		panic(err)
+	}
+
+	signature, err := v.Sign(ctx, proto.DomainContributionAndProof, duty.Epoch, duty.ValidatorIndex, root[:])
+	if err != nil {
+		return nil, err
+	}
+
+	msg := &structs.SignedContributionAndProof{
+		Message:   contributionAggregate,
+		Signature: signature,
+	}
+	if err := v.client.SubmitSignedContributionAndProof(ctx, msg); err != nil {
+		return nil, err
+	}
+
+	retJob := &proto.Duty_SyncCommitteeAggregate{
+		SyncCommitteeAggregate: &proto.SyncCommitteeAggregate{},
+	}
+	return retJob, nil
 }
 
 func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
@@ -587,6 +636,10 @@ func domainTypToDomain(typ proto.DomainType, config *beacon.ChainConfig) structs
 	case proto.DomainSyncCommitteeType:
 		// FIX: lighthouse does not return this constant value
 		return structs.Domain{7, 0, 0, 0}
+	case proto.DomainSyncCommitteeSelectionProof:
+		return structs.Domain{8, 0, 0, 0}
+	case proto.DomainContributionAndProof:
+		return structs.Domain{9, 0, 0, 0}
 	default:
 		panic(fmt.Errorf("domain typ not found: %s", typ))
 	}

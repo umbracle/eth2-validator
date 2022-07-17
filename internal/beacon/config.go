@@ -138,14 +138,18 @@ type ChainConfig struct {
 	MaxVoluntaryExits    uint64 `json:"MAX_VOLUNTARY_EXITS"`    // MaxVoluntaryExits defines the maximum number of validator exits in a block.
 
 	// BLS domain values.
-	DomainBeaconProposer    structs.Domain `json:"DOMAIN_BEACON_PROPOSER"`     // DomainBeaconProposer defines the BLS signature domain for beacon proposal verification.
-	DomainRandao            structs.Domain `json:"DOMAIN_RANDAO"`              // DomainRandao defines the BLS signature domain for randao verification.
-	DomainBeaconAttester    structs.Domain `json:"DOMAIN_BEACON_ATTESTER"`     // DomainBeaconAttester defines the BLS signature domain for attestation verification.
-	DomainDeposit           structs.Domain `json:"DOMAIN_DEPOSIT"`             // DomainDeposit defines the BLS signature domain for deposit verification.
-	DomainVoluntaryExit     structs.Domain `json:"DOMAIN_VOLUNTARY_EXIT"`      // DomainVoluntaryExit defines the BLS signature domain for exit verification.
-	DomainSelectionProof    structs.Domain `json:"DOMAIN_SELECTION_PROOF"`     // DomainSelectionProof defines the BLS signature domain for selection proof.
-	DomainAggregateAndProof structs.Domain `json:"DOMAIN_AGGREGATE_AND_PROOF"` // DomainAggregateAndProof defines the BLS signature domain for aggregate and proof.
-	DomainSyncCommittee     structs.Domain `json:"DOMAIN_SYNC_COMMITTEE"`
+	DomainBeaconProposer              structs.Domain `json:"DOMAIN_BEACON_PROPOSER"`     // DomainBeaconProposer defines the BLS signature domain for beacon proposal verification.
+	DomainRandao                      structs.Domain `json:"DOMAIN_RANDAO"`              // DomainRandao defines the BLS signature domain for randao verification.
+	DomainBeaconAttester              structs.Domain `json:"DOMAIN_BEACON_ATTESTER"`     // DomainBeaconAttester defines the BLS signature domain for attestation verification.
+	DomainDeposit                     structs.Domain `json:"DOMAIN_DEPOSIT"`             // DomainDeposit defines the BLS signature domain for deposit verification.
+	DomainVoluntaryExit               structs.Domain `json:"DOMAIN_VOLUNTARY_EXIT"`      // DomainVoluntaryExit defines the BLS signature domain for exit verification.
+	DomainSelectionProof              structs.Domain `json:"DOMAIN_SELECTION_PROOF"`     // DomainSelectionProof defines the BLS signature domain for selection proof.
+	DomainAggregateAndProof           structs.Domain `json:"DOMAIN_AGGREGATE_AND_PROOF"` // DomainAggregateAndProof defines the BLS signature domain for aggregate and proof.
+	DomainSyncCommittee               structs.Domain `json:"DOMAIN_SYNC_COMMITTEE"`
+	DomainSyncCommitteeSelectionProof structs.Domain `json:"DOMAIN_SYNC_COMMITTEE_SELECTION_PROOF"`
+	DomainContributionAndProof        structs.Domain `json:"DOMAIN_CONTRIBUTION_AND_PROOF"`
+
+	SyncCommitteeSize uint64 `json:"SYNC_COMMITTEE_SIZE"`
 
 	// Fork values
 	GenesisForkVersion structs.Domain `json:"GENESIS_FORK_VERSION"` // GenesisForkVersion is used to track fork version between state transitions.
