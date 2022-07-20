@@ -52,9 +52,10 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 
 	// pre-compute the delays
 	var (
-		attestationDelay            = slotDuration / 3
-		attestationAggregationDelay = slotDuration * 2 / 3
-		syncCommitteeDelay          = slotDuration / 3
+		attestationDelay              = slotDuration / 3
+		attestationAggregationDelay   = slotDuration * 2 / 3
+		syncCommitteeDelay            = slotDuration / 3
+		syncCommitteeAggregationDelay = slotDuration * 2 / 3
 	)
 
 	var duties []*proto.Duty
@@ -135,16 +136,25 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 			if err != nil {
 				return nil, err
 			}
+
+			// aggregate indices in subCommitteIndex
+			committeeIndices := map[uint64]struct{}{}
 			for _, index := range indices {
+				subcommittee := uint64(index) / (s.config.SyncCommitteeSize / syncCommitteeSubnetCount)
+				committeeIndices[subcommittee] = struct{}{}
+			}
+
+			for index := range committeeIndices {
 				isAggregate, selectionProof, err := s.isSyncCommitteeAggregator(index, slot, uint64(committee.ValidatorIndex))
 				if err != nil {
 					return nil, err
 				}
 				if isAggregate {
 					aggregateDuty := &proto.Duty{
-						Id:    uuid.Generate(),
-						Slot:  slot,
-						Epoch: eval.Epoch,
+						Id:         uuid.Generate(),
+						Slot:       slot,
+						Epoch:      eval.Epoch,
+						ActiveTime: timestamppb.New(s.atSlot(slot).Add(syncCommitteeAggregationDelay)),
 						Job: &proto.Duty_SyncCommitteeAggregate{
 							SyncCommitteeAggregate: &proto.SyncCommitteeAggregate{
 								SelectionProof:    hex.EncodeToString(selectionProof),

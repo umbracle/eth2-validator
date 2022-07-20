@@ -232,26 +232,26 @@ type ExecutionPayload struct {
 }
 
 type SyncAggregatorSelectionData struct {
-	Slot              uint64
-	SubCommitteeIndex uint64
+	Slot              uint64 `json:"slot"`
+	SubCommitteeIndex uint64 `json:"sub_committee_index"`
 }
 
 // SyncCommitteeContribution is the Ethereum 2 sync committee contribution structure.
 type SyncCommitteeContribution struct {
-	Slot              uint64
-	BeaconBlockRoot   [32]byte `ssz-size:"32"`
-	SubcommitteeIndex uint64
-	AggregationBits   []byte   `ssz-size:"16"` // bitvector
-	Signature         [96]byte `ssz-size:"96"`
+	Slot              uint64   `json:"slot"`
+	BeaconBlockRoot   [32]byte `json:"beacon_block_root" ssz-size:"32"`
+	SubcommitteeIndex uint64   `json:"subcommittee_index"`
+	AggregationBits   []byte   `json:"aggregation_bits" ssz-size:"16"` // bitvector
+	Signature         [96]byte `json:"signature" ssz-size:"96"`
 }
 
 type ContributionAndProof struct {
-	AggregatorIndex uint64
-	Contribution    *SyncCommitteeContribution
-	SelectionProof  []byte `ssz-size:"96"`
+	AggregatorIndex uint64                     `json:"aggregator_index"`
+	Contribution    *SyncCommitteeContribution `json:"contribution"`
+	SelectionProof  []byte                     `json:"selection_proof" ssz-size:"96"`
 }
 
 type SignedContributionAndProof struct {
-	Message   *ContributionAndProof
-	Signature []byte `ssz-size:"96"`
+	Message   *ContributionAndProof `json:"message"`
+	Signature []byte                `json:"signature" ssz-size:"96"`
 }

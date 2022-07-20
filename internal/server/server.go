@@ -37,6 +37,7 @@ type Server struct {
 	grpcServer   *grpc.Server
 	evalQueue    *EvalQueue
 	beaconConfig *beacon.ChainConfig
+	genesis      *beacon.Genesis
 }
 
 // NewServer starts a new validator
@@ -66,6 +67,12 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 		return nil, err
 	}
 	v.beaconConfig = beaconConfig
+
+	genesis, err := v.client.Genesis(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	v.genesis = genesis
 
 	for _, privKey := range config.PrivKey {
 		if err := v.addValidator(privKey); err != nil {
@@ -207,8 +214,8 @@ func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty
 		Message:   contributionAggregate,
 		Signature: signature,
 	}
-	if err := v.client.SubmitSignedContributionAndProof(ctx, msg); err != nil {
-		return nil, err
+	if err := v.client.SubmitSignedContributionAndProof(ctx, []*structs.SignedContributionAndProof{msg}); err != nil {
+		return nil, fmt.Errorf("failed to submit signed committee aggregate proof: %v", err)
 	}
 
 	retJob := &proto.Duty_SyncCommitteeAggregate{
@@ -392,11 +399,6 @@ func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64
 	_, span := otel.Tracer("Validator").Start(ctx, "Sign")
 	defer span.End()
 
-	genesis, err := v.client.Genesis(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var forkVersion []byte
 	if v.beaconConfig.BellatrixForkEpoch <= epoch {
 		forkVersion = v.beaconConfig.BellatrixForkVersion[:]
@@ -408,7 +410,7 @@ func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64
 
 	domainVal := domainTypToDomain(domain, v.beaconConfig)
 
-	ddd, err := v.beaconConfig.ComputeDomain(domainVal, forkVersion, genesis.Root)
+	ddd, err := v.beaconConfig.ComputeDomain(domainVal, forkVersion, v.genesis.Root)
 	if err != nil {
 		return nil, err
 	}
