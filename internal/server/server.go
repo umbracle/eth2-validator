@@ -37,6 +37,7 @@ type Server struct {
 	grpcServer   *grpc.Server
 	evalQueue    *EvalQueue
 	beaconConfig *beacon.ChainConfig
+	genesis      *beacon.Genesis
 }
 
 // NewServer starts a new validator
@@ -66,6 +67,12 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 		return nil, err
 	}
 	v.beaconConfig = beaconConfig
+
+	genesis, err := v.client.Genesis(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	v.genesis = genesis
 
 	for _, privKey := range config.PrivKey {
 		if err := v.addValidator(privKey); err != nil {
@@ -141,6 +148,8 @@ func (v *Server) runWorker() {
 				job, err = v.runAttestationAggregate(ctx, duty)
 			case *proto.Duty_SyncCommittee:
 				job, err = v.runSyncCommittee(ctx, duty)
+			case *proto.Duty_SyncCommitteeAggregate:
+				job, err = v.runSyncCommitteeAggregate(ctx, duty)
 			}
 			if err != nil {
 				panic(fmt.Errorf("failed to handle %s: %v", duty.Type(), err))
@@ -166,6 +175,53 @@ func (v *Server) run() {
 
 	// run the worker
 	go v.runWorker()
+}
+
+func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
+	job := duty.Job.(*proto.Duty_SyncCommitteeAggregate).SyncCommitteeAggregate
+
+	latestRoot, err := v.client.GetHeadBlockRoot(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get head block root: %v", err)
+	}
+
+	contribution, err := v.client.SyncCommitteeContribution(ctx, duty.Slot, job.SubCommitteeIndex, latestRoot)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sync committee contribution: %v", err)
+	}
+
+	selectionProof, err := hex.DecodeString(job.SelectionProof)
+	if err != nil {
+		panic(err)
+	}
+
+	contributionAggregate := &structs.ContributionAndProof{
+		AggregatorIndex: duty.ValidatorIndex,
+		Contribution:    contribution,
+		SelectionProof:  selectionProof,
+	}
+	root, err := contributionAggregate.HashTreeRoot()
+	if err != nil {
+		panic(err)
+	}
+
+	signature, err := v.Sign(ctx, proto.DomainContributionAndProof, duty.Epoch, duty.ValidatorIndex, root[:])
+	if err != nil {
+		return nil, err
+	}
+
+	msg := &structs.SignedContributionAndProof{
+		Message:   contributionAggregate,
+		Signature: signature,
+	}
+	if err := v.client.SubmitSignedContributionAndProof(ctx, []*structs.SignedContributionAndProof{msg}); err != nil {
+		return nil, fmt.Errorf("failed to submit signed committee aggregate proof: %v", err)
+	}
+
+	retJob := &proto.Duty_SyncCommitteeAggregate{
+		SyncCommitteeAggregate: &proto.SyncCommitteeAggregate{},
+	}
+	return retJob, nil
 }
 
 func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
@@ -343,11 +399,6 @@ func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64
 	_, span := otel.Tracer("Validator").Start(ctx, "Sign")
 	defer span.End()
 
-	genesis, err := v.client.Genesis(ctx)
-	if err != nil {
-		return nil, err
-	}
-
 	var forkVersion []byte
 	if v.beaconConfig.BellatrixForkEpoch <= epoch {
 		forkVersion = v.beaconConfig.BellatrixForkVersion[:]
@@ -359,7 +410,7 @@ func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64
 
 	domainVal := domainTypToDomain(domain, v.beaconConfig)
 
-	ddd, err := v.beaconConfig.ComputeDomain(domainVal, forkVersion, genesis.Root)
+	ddd, err := v.beaconConfig.ComputeDomain(domainVal, forkVersion, v.genesis.Root)
 	if err != nil {
 		return nil, err
 	}
@@ -587,6 +638,10 @@ func domainTypToDomain(typ proto.DomainType, config *beacon.ChainConfig) structs
 	case proto.DomainSyncCommitteeType:
 		// FIX: lighthouse does not return this constant value
 		return structs.Domain{7, 0, 0, 0}
+	case proto.DomainSyncCommitteeSelectionProof:
+		return structs.Domain{8, 0, 0, 0}
+	case proto.DomainContributionAndProof:
+		return structs.Domain{9, 0, 0, 0}
 	default:
 		panic(fmt.Errorf("domain typ not found: %s", typ))
 	}

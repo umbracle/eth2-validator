@@ -11,12 +11,10 @@ type Checkpoint struct {
 	Root  [32]byte `json:"root" ssz-size:"32"`
 }
 
-type Hash [32]byte
-
 type AttestationData struct {
 	Slot            uint64      `json:"slot"`
 	Index           uint64      `json:"index"`
-	BeaconBlockHash Hash        `json:"beacon_block_root" ssz-size:"32"`
+	BeaconBlockHash [32]byte    `json:"beacon_block_root" ssz-size:"32"`
 	Source          *Checkpoint `json:"source"`
 	Target          *Checkpoint `json:"target"`
 }
@@ -231,4 +229,29 @@ type ExecutionPayload struct {
 	BaseFeePerGas [32]byte  `ssz-size:"32" json:"base_fee_per_gas"`
 	BlockHash     [32]byte  `ssz-size:"32" json:"block_hash"`
 	Transactions  [][]byte  `ssz-max:"1048576,1073741824" ssz-size:"?,?" json:"transactions"`
+}
+
+type SyncAggregatorSelectionData struct {
+	Slot              uint64 `json:"slot"`
+	SubCommitteeIndex uint64 `json:"sub_committee_index"`
+}
+
+// SyncCommitteeContribution is the Ethereum 2 sync committee contribution structure.
+type SyncCommitteeContribution struct {
+	Slot              uint64   `json:"slot"`
+	BeaconBlockRoot   [32]byte `json:"beacon_block_root" ssz-size:"32"`
+	SubcommitteeIndex uint64   `json:"subcommittee_index"`
+	AggregationBits   []byte   `json:"aggregation_bits" ssz-size:"16"` // bitvector
+	Signature         [96]byte `json:"signature" ssz-size:"96"`
+}
+
+type ContributionAndProof struct {
+	AggregatorIndex uint64                     `json:"aggregator_index"`
+	Contribution    *SyncCommitteeContribution `json:"contribution"`
+	SelectionProof  []byte                     `json:"selection_proof" ssz-size:"96"`
+}
+
+type SignedContributionAndProof struct {
+	Message   *ContributionAndProof `json:"message"`
+	Signature []byte                `json:"signature" ssz-size:"96"`
 }

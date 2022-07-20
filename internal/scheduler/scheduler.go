@@ -7,11 +7,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
+	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"github.com/umbracle/eth2-validator/internal/uuid"
 	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -50,9 +52,10 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 
 	// pre-compute the delays
 	var (
-		attestationDelay            = slotDuration / 3
-		attestationAggregationDelay = slotDuration * 2 / 3
-		syncCommitteeDelay          = slotDuration / 3
+		attestationDelay              = slotDuration / 3
+		attestationAggregationDelay   = slotDuration * 2 / 3
+		syncCommitteeDelay            = slotDuration / 3
+		syncCommitteeAggregationDelay = slotDuration * 2 / 3
 	)
 
 	var duties []*proto.Duty
@@ -128,6 +131,41 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 				ValidatorIndex: uint64(committee.ValidatorIndex),
 			}
 			duties = append(duties, committeDuty)
+
+			indices, err := convertToIntIndices(committee.ValidatorSyncCommitteeIndices)
+			if err != nil {
+				return nil, err
+			}
+
+			// aggregate indices in subCommitteIndex
+			committeeIndices := map[uint64]struct{}{}
+			for _, index := range indices {
+				subcommittee := uint64(index) / (s.config.SyncCommitteeSize / syncCommitteeSubnetCount)
+				committeeIndices[subcommittee] = struct{}{}
+			}
+
+			for index := range committeeIndices {
+				isAggregate, selectionProof, err := s.isSyncCommitteeAggregator(index, slot, uint64(committee.ValidatorIndex))
+				if err != nil {
+					return nil, err
+				}
+				if isAggregate {
+					aggregateDuty := &proto.Duty{
+						Id:         uuid.Generate(),
+						Slot:       slot,
+						Epoch:      eval.Epoch,
+						ActiveTime: timestamppb.New(s.atSlot(slot).Add(syncCommitteeAggregationDelay)),
+						Job: &proto.Duty_SyncCommitteeAggregate{
+							SyncCommitteeAggregate: &proto.SyncCommitteeAggregate{
+								SelectionProof:    hex.EncodeToString(selectionProof),
+								SubCommitteeIndex: index,
+							},
+						},
+						ValidatorIndex: uint64(committee.ValidatorIndex),
+					}
+					duties = append(duties, aggregateDuty)
+				}
+			}
 		}
 	}
 
@@ -157,6 +195,35 @@ func (s *Scheduler) isAttestatorAggregate(committeeSize uint64, slot uint64, acc
 	return binary.LittleEndian.Uint64(hash[:8])%modulo == 0, signature, nil
 }
 
+const (
+	syncCommitteeSubnetCount              = 4
+	targetAggregattorsPerSyncSubcommittee = 16
+)
+
+func (s *Scheduler) isSyncCommitteeAggregator(subCommitteeIndex uint64, slot uint64, account uint64) (bool, []byte, error) {
+	modulo := s.config.SyncCommitteeSize / syncCommitteeSubnetCount / targetAggregattorsPerSyncSubcommittee
+	if modulo < 1 {
+		modulo = 1
+	}
+
+	signObj := &structs.SyncAggregatorSelectionData{
+		Slot:              slot,
+		SubCommitteeIndex: subCommitteeIndex,
+	}
+	root, err := signObj.HashTreeRoot()
+	if err != nil {
+		return false, nil, err
+	}
+
+	signature, err := s.state.Sign(s.ctx, proto.DomainSyncCommitteeSelectionProof, s.eval.Epoch, account, root[:])
+	if err != nil {
+		return false, nil, err
+	}
+
+	hash := sha256.Sum256(signature)
+	return binary.LittleEndian.Uint64(hash[:8])%modulo == 0, signature, nil
+}
+
 func (s *Scheduler) cleanDuties() {
 	var cleanDuties []*proto.Duty
 
@@ -167,4 +234,16 @@ func (s *Scheduler) cleanDuties() {
 		}
 	}
 	s.duties = cleanDuties
+}
+
+func convertToIntIndices(s []string) ([]uint64, error) {
+	res := []uint64{}
+	for _, str := range s {
+		u64, err := strconv.ParseUint(str, 10, 32)
+		if err != nil {
+			return nil, err
+		}
+		res = append(res, u64)
+	}
+	return res, nil
 }

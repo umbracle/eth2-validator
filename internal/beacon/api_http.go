@@ -246,7 +246,7 @@ type Validator struct {
 	Validator struct {
 		PubKey                     string `json:"pubkey"`
 		Slashed                    bool   `json:"slashed"`
-		ActivationElegibilityEpoch uint64 `json"activation_eligibility_epoch"`
+		ActivationElegibilityEpoch uint64 `json:"activation_eligibility_epoch"`
 		ActivationEpoch            uint64 `json:"activation_epoch"`
 		ExitEpoch                  uint64 `json:"exit_epoch"`
 		WithdrawableEpoch          uint64 `json:"withdrawable_epoch"`
@@ -336,4 +336,22 @@ func (h *HttpAPI) ConfigSpec() (*ChainConfig, error) {
 	var config *ChainConfig
 	err := h.get("/eth/v1/config/spec", &config)
 	return config, err
+}
+
+// produces a sync committee contribution
+func (h *HttpAPI) SyncCommitteeContribution(ctx context.Context, slot uint64, subCommitteeIndex uint64, root []byte) (*structs.SyncCommitteeContribution, error) {
+	_, span := otel.Tracer("Validator").Start(ctx, "SyncCommitteeContribution")
+	defer span.End()
+
+	var out *structs.SyncCommitteeContribution
+	err := h.get(fmt.Sprintf("/eth/v1/validator/sync_committee_contribution?slot=%d&subcommittee_index=%d&beacon_block_root=0x%s", slot, subCommitteeIndex, hex.EncodeToString(root[:])), &out)
+	return out, err
+}
+
+func (h *HttpAPI) SubmitSignedContributionAndProof(ctx context.Context, signedContribution []*structs.SignedContributionAndProof) error {
+	_, span := otel.Tracer("Validator").Start(ctx, "SignedContributionAndProof")
+	defer span.End()
+
+	err := h.post("/eth/v1/validator/contribution_and_proofs", signedContribution, nil)
+	return err
 }
