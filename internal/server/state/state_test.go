@@ -35,10 +35,8 @@ func TestState_InsertDuty(t *testing.T) {
 	duty1 := &proto.Duty{
 		Id:   "a",
 		Slot: 1,
-		Job: &proto.Duty_BlockProposal{
-			BlockProposal: &proto.BlockProposal{
-				Root: "abc",
-			},
+		Job: &proto.Duty_BlockProposal_{
+			BlockProposal: &proto.Duty_BlockProposal{},
 		},
 	}
 	err := state.InsertDuty(duty1)
@@ -46,9 +44,9 @@ func TestState_InsertDuty(t *testing.T) {
 
 	duty2 := &proto.Duty{
 		Id: "b",
-		Job: &proto.Duty_Attestation{
-			Attestation: &proto.Attestation{
-				Root: "def",
+		Job: &proto.Duty_Attestation_{
+			Attestation: &proto.Duty_Attestation{
+				CommitteeIndex: 1,
 			},
 		},
 	}

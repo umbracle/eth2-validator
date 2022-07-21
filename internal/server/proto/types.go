@@ -21,15 +21,15 @@ const (
 
 func (d *Duty) Type() string {
 	switch d.Job.(type) {
-	case *Duty_BlockProposal:
+	case *Duty_BlockProposal_:
 		return DutyBlockProposal
-	case *Duty_Attestation:
+	case *Duty_Attestation_:
 		return DutyAttestation
-	case *Duty_AttestationAggregate:
+	case *Duty_AttestationAggregate_:
 		return DutyAttestationAggregate
-	case *Duty_SyncCommittee:
+	case *Duty_SyncCommittee_:
 		return DutySyncCommittee
-	case *Duty_SyncCommitteeAggregate:
+	case *Duty_SyncCommitteeAggregate_:
 		return DutySyncCommitteeAggregate
 	default:
 		panic("BUG")

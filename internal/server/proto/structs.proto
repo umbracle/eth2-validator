@@ -3,7 +3,6 @@ syntax = "proto3";
 package proto;
 
 import "google/protobuf/timestamp.proto";
-import "google/protobuf/any.proto";
 
 option go_package = "/internal/server/proto";
 
@@ -35,47 +34,83 @@ message Duty {
     repeated string blockedBy = 5;
 
     uint64 epoch = 6;
-
-    google.protobuf.Any input = 7;
-
+    
     uint64 validatorIndex = 8;
     
     oneof job {
-        BlockProposal BlockProposal = 20;
-        Attestation Attestation = 21;
-        AttestationAggregate AttestationAggregate = 22;
-        SyncCommittee SyncCommittee = 23;
-        SyncCommitteeAggregate SyncCommitteeAggregate = 24;
+        BlockProposal blockProposal = 20;
+        Attestation attestation = 21;
+        AttestationAggregate attestationAggregate = 22;
+        SyncCommittee syncCommittee = 23;
+        SyncCommitteeAggregate syncCommitteeAggregate = 24;
     }
-}
+    
+    Result result = 30;
 
-message BlockProposal {
-    string root = 2;
-    string signature = 3;
-}
+    State state = 31;
 
-message Attestation {
-    string root = 2;
-
-    Checkpoint source = 3;
-    Checkpoint target = 4;
-
-    message Checkpoint {
-        string root = 1;
-        uint64 epoch = 2;
+    message Result {
+        BlockProposalResult blockProposal = 50;
+        AttestationResult Attestation = 51;
+        AttestationAggregateResult AttestationAggregate = 52;
+        SyncCommitteeResult SyncCommittee = 53;
+        SyncCommitteeAggregateResult SyncCommitteeAggregate = 54;
     }
-}
 
-message AttestationAggregate {
-    string selectionProof = 1;
-}
+    message BlockProposal {
+    }
+    
+    message BlockProposalResult{
+        bytes root = 2;
+        bytes signature = 3;
+    }
 
-message SyncCommittee {
-}
+    message Attestation {
+        uint64 committeeIndex = 1;
+        uint64 committeeLength = 2;
+    }
 
-message SyncCommitteeAggregate {
-    string selectionProof = 1;
-    uint64 subCommitteeIndex = 2;
+    message AttestationResult{
+        bytes root = 2;
+
+        Checkpoint source = 3;
+        Checkpoint target = 4;
+    
+        message Checkpoint {
+            bytes root = 1;
+            uint64 epoch = 2;
+        }
+    }
+
+    message AttestationAggregate {
+        bytes selectionProof = 1;
+    }
+
+    message AttestationAggregateResult{
+    }
+
+    message SyncCommittee {
+    }
+    
+    message SyncCommitteeResult{
+    }
+
+    message SyncCommitteeAggregate {
+        bytes selectionProof = 1;
+        uint64 subCommitteeIndex = 2;
+    }
+
+    message SyncCommitteeAggregateResult {
+    }
+
+    enum State {
+        UNKNOWN = 0;
+        QUEUED = 1;
+        WAITING = 2;
+        RUNNING = 3;
+        ERROR = 4;
+        SUCCESS = 5;
+    }
 }
 
 message Validator {
