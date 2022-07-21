@@ -299,7 +299,7 @@ func (h *HttpAPI) PublishAttestations(ctx context.Context, data []*structs.Attes
 	return err
 }
 
-func (h *HttpAPI) AggregateAttestation(ctx context.Context, slot uint64, root [32]byte) (*structs.Attestation, error) {
+func (h *HttpAPI) AggregateAttestation(ctx context.Context, slot uint64, root []byte) (*structs.Attestation, error) {
 	_, span := otel.Tracer("Validator").Start(ctx, "AggregateAttestation")
 	defer span.End()
 

@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -15,7 +13,6 @@ import (
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"github.com/umbracle/eth2-validator/internal/uuid"
-	"google.golang.org/protobuf/types/known/anypb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -67,28 +64,24 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 			Slot:           proposal.Slot,
 			Epoch:          eval.Epoch,
 			ActiveTime:     timestamppb.New(timeToStart),
-			Job:            &proto.Duty_BlockProposal{},
+			Job:            &proto.Duty_BlockProposal_{},
 			ValidatorIndex: uint64(proposal.ValidatorIndex),
 		}
 		duties = append(duties, proposalDuty)
 	}
 
 	for _, attestation := range eval.Attestation {
-		raw, err := json.Marshal(attestation)
-		if err != nil {
-			return nil, err
-		}
 		attestationDuty := &proto.Duty{
 			Id:             uuid.Generate(),
 			Slot:           attestation.Slot,
 			Epoch:          eval.Epoch,
 			ActiveTime:     timestamppb.New(s.atSlot(attestation.Slot).Add(attestationDelay)),
 			ValidatorIndex: uint64(attestation.ValidatorIndex),
-			Input: &anypb.Any{
-				Value: raw,
-			},
-			Job: &proto.Duty_Attestation{
-				Attestation: &proto.Attestation{},
+			Job: &proto.Duty_Attestation_{
+				Attestation: &proto.Duty_Attestation{
+					CommitteeIndex:  attestation.CommitteeIndex,
+					CommitteeLength: attestation.CommitteeLength,
+				},
 			},
 		}
 		duties = append(duties, attestationDuty)
@@ -104,9 +97,9 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 				Epoch:          eval.Epoch,
 				ActiveTime:     timestamppb.New(s.atSlot(attestation.Slot).Add(attestationAggregationDelay)),
 				ValidatorIndex: uint64(attestation.ValidatorIndex),
-				Job: &proto.Duty_AttestationAggregate{
-					AttestationAggregate: &proto.AttestationAggregate{
-						SelectionProof: hex.EncodeToString(selectionProof),
+				Job: &proto.Duty_AttestationAggregate_{
+					AttestationAggregate: &proto.Duty_AttestationAggregate{
+						SelectionProof: selectionProof,
 					},
 				},
 				BlockedBy: []string{
@@ -127,7 +120,7 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 				Slot:           slot,
 				Epoch:          eval.Epoch,
 				ActiveTime:     timestamppb.New(s.atSlot(slot).Add(syncCommitteeDelay)),
-				Job:            &proto.Duty_SyncCommittee{},
+				Job:            &proto.Duty_SyncCommittee_{},
 				ValidatorIndex: uint64(committee.ValidatorIndex),
 			}
 			duties = append(duties, committeDuty)
@@ -155,9 +148,9 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 						Slot:       slot,
 						Epoch:      eval.Epoch,
 						ActiveTime: timestamppb.New(s.atSlot(slot).Add(syncCommitteeAggregationDelay)),
-						Job: &proto.Duty_SyncCommitteeAggregate{
-							SyncCommitteeAggregate: &proto.SyncCommitteeAggregate{
-								SelectionProof:    hex.EncodeToString(selectionProof),
+						Job: &proto.Duty_SyncCommitteeAggregate_{
+							SyncCommitteeAggregate: &proto.Duty_SyncCommitteeAggregate{
+								SelectionProof:    selectionProof,
 								SubCommitteeIndex: index,
 							},
 						},

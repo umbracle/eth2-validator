@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net"
 	"time"
@@ -138,25 +137,25 @@ func (v *Server) runWorker() {
 			ctx, span := otel.Tracer("Validator").Start(ctx, duty.Type())
 			defer span.End()
 
-			var job proto.DutyJob
+			var res *proto.Duty_Result
 			switch duty.Job.(type) {
-			case *proto.Duty_BlockProposal:
-				job, err = v.runBlockProposal(ctx, duty)
-			case *proto.Duty_Attestation:
-				job, err = v.runSingleAttestation(ctx, duty)
-			case *proto.Duty_AttestationAggregate:
-				job, err = v.runAttestationAggregate(ctx, duty)
-			case *proto.Duty_SyncCommittee:
-				job, err = v.runSyncCommittee(ctx, duty)
-			case *proto.Duty_SyncCommitteeAggregate:
-				job, err = v.runSyncCommitteeAggregate(ctx, duty)
+			case *proto.Duty_BlockProposal_:
+				res, err = v.runBlockProposal(ctx, duty)
+			case *proto.Duty_Attestation_:
+				res, err = v.runSingleAttestation(ctx, duty)
+			case *proto.Duty_AttestationAggregate_:
+				res, err = v.runAttestationAggregate(ctx, duty)
+			case *proto.Duty_SyncCommittee_:
+				res, err = v.runSyncCommittee(ctx, duty)
+			case *proto.Duty_SyncCommitteeAggregate_:
+				res, err = v.runSyncCommitteeAggregate(ctx, duty)
 			}
 			if err != nil {
 				panic(fmt.Errorf("failed to handle %s: %v", duty.Type(), err))
 			}
 
 			// upsert the job on state
-			duty.Job = job
+			duty.Result = res
 			if err := v.state.InsertDuty(duty); err != nil {
 				panic(err)
 			}
@@ -177,8 +176,8 @@ func (v *Server) run() {
 	go v.runWorker()
 }
 
-func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
-	job := duty.Job.(*proto.Duty_SyncCommitteeAggregate).SyncCommitteeAggregate
+func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
+	job := duty.GetSyncCommitteeAggregate()
 
 	latestRoot, err := v.client.GetHeadBlockRoot(ctx)
 	if err != nil {
@@ -190,19 +189,14 @@ func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty
 		return nil, fmt.Errorf("failed to get sync committee contribution: %v", err)
 	}
 
-	selectionProof, err := hex.DecodeString(job.SelectionProof)
-	if err != nil {
-		panic(err)
-	}
-
 	contributionAggregate := &structs.ContributionAndProof{
 		AggregatorIndex: duty.ValidatorIndex,
 		Contribution:    contribution,
-		SelectionProof:  selectionProof,
+		SelectionProof:  job.SelectionProof,
 	}
 	root, err := contributionAggregate.HashTreeRoot()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	signature, err := v.Sign(ctx, proto.DomainContributionAndProof, duty.Epoch, duty.ValidatorIndex, root[:])
@@ -218,13 +212,13 @@ func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty
 		return nil, fmt.Errorf("failed to submit signed committee aggregate proof: %v", err)
 	}
 
-	retJob := &proto.Duty_SyncCommitteeAggregate{
-		SyncCommitteeAggregate: &proto.SyncCommitteeAggregate{},
+	result := &proto.Duty_Result{
+		SyncCommitteeAggregate: &proto.Duty_SyncCommitteeAggregateResult{},
 	}
-	return retJob, nil
+	return result, nil
 }
 
-func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
+func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
 	// get root
 	latestRoot, err := v.client.GetHeadBlockRoot(ctx)
 	if err != nil {
@@ -250,20 +244,18 @@ func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (proto.
 	}
 
 	// store the attestation in the state
-	job := &proto.Duty_SyncCommittee{
-		SyncCommittee: &proto.SyncCommittee{},
+	result := &proto.Duty_Result{
+		SyncCommittee: &proto.Duty_SyncCommitteeResult{},
 	}
-	return job, nil
+	return result, nil
 }
 
-func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
-	var attestationInput *beacon.AttesterDuty
-	if err := json.Unmarshal(duty.Input.Value, &attestationInput); err != nil {
-		return nil, err
-	}
-	attestationData, err := v.client.RequestAttestationData(ctx, duty.Slot, attestationInput.CommitteeIndex)
+func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
+	job := duty.GetAttestation()
+
+	attestationData, err := v.client.RequestAttestationData(ctx, duty.Slot, job.CommitteeIndex)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to reuest attestation data: %v", err)
 	}
 	attestationRoot, err := attestationData.HashTreeRoot()
 	if err != nil {
@@ -275,8 +267,8 @@ func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (pr
 		return nil, err
 	}
 
-	bitlist := bitlist.NewBitlist(attestationInput.CommitteeLength)
-	bitlist.SetBitAt(attestationInput.CommitteeIndex, true)
+	bitlist := bitlist.NewBitlist(job.CommitteeLength)
+	bitlist.SetBitAt(job.CommitteeIndex, true)
 
 	attestation := &structs.Attestation{
 		Data:            attestationData,
@@ -284,45 +276,35 @@ func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (pr
 		Signature:       attestedSignature,
 	}
 	if err := v.client.PublishAttestations(ctx, []*structs.Attestation{attestation}); err != nil {
-		panic(err)
+		return nil, fmt.Errorf("failed to publish attestations: %v", err)
 	}
 
 	// store the attestation in the state
-	job := &proto.Duty_Attestation{
-		Attestation: &proto.Attestation{
-			Root: hex.EncodeToString(attestationRoot[:]),
-			Source: &proto.Attestation_Checkpoint{
-				Root:  hex.EncodeToString(attestationData.Source.Root[:]),
+	result := &proto.Duty_Result{
+		Attestation: &proto.Duty_AttestationResult{
+			Root: attestationRoot[:],
+			Source: &proto.Duty_AttestationResult_Checkpoint{
+				Root:  attestationData.Source.Root[:],
 				Epoch: attestationData.Source.Epoch,
 			},
-			Target: &proto.Attestation_Checkpoint{
-				Root:  hex.EncodeToString(attestationData.Target.Root[:]),
+			Target: &proto.Duty_AttestationResult_Checkpoint{
+				Root:  attestationData.Target.Root[:],
 				Epoch: attestationData.Target.Epoch,
 			},
 		},
 	}
-	return job, nil
+	return result, nil
 }
 
-func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
+func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
+	job := duty.GetAttestationAggregate()
+
 	attestation, err := v.state.DutyByID(duty.BlockedBy[0])
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
-	attestationRootC, err := hex.DecodeString(attestation.Job.(*proto.Duty_Attestation).Attestation.Root)
-	if err != nil {
-		panic(err)
-	}
-	attestationRoot := [32]byte{}
-	copy(attestationRoot[:], attestationRootC)
-
-	selectionProof, err := hex.DecodeString(duty.GetAttestationAggregate().SelectionProof)
-	if err != nil {
-		panic(err)
-	}
-
-	aggregateAttestation, err := v.client.AggregateAttestation(ctx, duty.Slot, attestationRoot)
+	aggregateAttestation, err := v.client.AggregateAttestation(ctx, duty.Slot, attestation.Result.Attestation.Root)
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate attestation: %v", err)
 	}
@@ -331,11 +313,11 @@ func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) 
 	aggregateAndProof := &structs.AggregateAndProof{
 		Index:          duty.ValidatorIndex,
 		Aggregate:      aggregateAttestation,
-		SelectionProof: selectionProof,
+		SelectionProof: job.SelectionProof,
 	}
 	aggregateAndProofRoot, err := aggregateAndProof.HashTreeRoot()
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 
 	aggregateAndProofRootSignature, err := v.Sign(ctx, proto.DomainAggregateAndProofType, duty.Epoch, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot[:]))
@@ -352,12 +334,15 @@ func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) 
 	if err := v.client.PublishAggregateAndProof(ctx, req); err != nil {
 		return nil, fmt.Errorf("failed to publish aggregate and proof: %v", err)
 	}
-	return &proto.Duty_AttestationAggregate{}, nil
+
+	result := &proto.Duty_Result{
+		AttestationAggregate: &proto.Duty_AttestationAggregateResult{},
+	}
+	return result, nil
 }
 
-func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (proto.DutyJob, error) {
+func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
 	// create the randao
-
 	randaoReveal, err := v.Sign(ctx, proto.DomainRandaomType, duty.Epoch, duty.ValidatorIndex, proto.Uint64SSZ(duty.Epoch))
 	if err != nil {
 		return nil, err
@@ -365,7 +350,7 @@ func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (proto.
 
 	block, err := v.client.GetBlock(ctx, duty.Slot, randaoReveal)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get block: %v", err)
 	}
 
 	blockRoot, err := block.HashTreeRoot()
@@ -383,16 +368,16 @@ func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (proto.
 	}
 
 	if err := v.client.PublishSignedBlock(ctx, signedBlock); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to publish block: %v", err)
 	}
 
-	job := &proto.Duty_BlockProposal{
-		BlockProposal: &proto.BlockProposal{
-			Root:      hex.EncodeToString(block.StateRoot),
-			Signature: hex.EncodeToString(blockSignature),
+	result := &proto.Duty_Result{
+		BlockProposal: &proto.Duty_BlockProposalResult{
+			Root:      block.StateRoot,
+			Signature: blockSignature,
 		},
 	}
-	return job, nil
+	return result, nil
 }
 
 func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64, accountIndex uint64, root []byte) ([]byte, error) {
