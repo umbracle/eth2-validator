@@ -1,10 +1,7 @@
 package state
 
 import (
-	"fmt"
-
 	"github.com/hashicorp/go-memdb"
-	"github.com/umbracle/eth2-validator/internal/server/proto"
 )
 
 const (
@@ -30,20 +27,15 @@ var schema = &memdb.DBSchema{
 				},
 				// index for EIP-3076 block proposer slash protection
 				"block_proposer": {
-					Name: "block_proposer",
-					Indexer: &memdb.CompoundIndex{
-						Indexes: []memdb.Indexer{
-							&memdb.ConditionalIndex{
-								Conditional: isJobConditional(proto.DutyBlockProposal, true),
-							},
-							&memdb.UintFieldIndex{
-								Field: "ValidatorIndex",
-							},
-							&memdb.UintFieldIndex{
-								Field: "Slot",
-							},
-						},
-					},
+					Name:         "block_proposer",
+					AllowMissing: true,
+					Indexer:      &slashingBlockIndex{},
+				},
+				// index for EIP-3076 attest slash protection
+				"attest_proposer": {
+					Name:         "attest_proposer",
+					AllowMissing: true,
+					Indexer:      &slashingAttestIndex{},
 				},
 			},
 		},
@@ -66,20 +58,4 @@ var schema = &memdb.DBSchema{
 			},
 		},
 	},
-}
-
-func isJobConditional(typ proto.DutyType, withResult bool) func(obj interface{}) (bool, error) {
-	return func(obj interface{}) (bool, error) {
-		duty, ok := obj.(*proto.Duty)
-		if !ok {
-			return false, fmt.Errorf("obj is not duty")
-		}
-		if duty.Type() != typ {
-			return false, nil
-		}
-		if !withResult {
-			return true, nil
-		}
-		return duty.Result != nil, nil
-	}
 }

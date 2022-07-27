@@ -125,3 +125,22 @@ func TestState_SlashBlockCheck(t *testing.T) {
 	// past block
 	assert.Error(t, state.SlashBlockCheck(1, 4, root2))
 }
+
+func TestState_SlashAttestCheck(t *testing.T) {
+	state := newTestState(t)
+
+	err := state.InsertDuty(&proto.Duty{
+		Id:             uuid.Generate(),
+		ValidatorIndex: 1,
+		Slot:           5,
+		Job:            &proto.Duty_Attestation_{},
+		Result: &proto.Duty_Result{
+			Attestation: &proto.Duty_AttestationResult{
+				Source: &proto.Duty_AttestationResult_Checkpoint{Epoch: 10},
+				Target: &proto.Duty_AttestationResult_Checkpoint{Epoch: 15},
+			},
+		},
+	})
+	assert.NoError(t, err)
+	assert.Error(t, state.SlashAttestCheck(1, 10, 15))
+}

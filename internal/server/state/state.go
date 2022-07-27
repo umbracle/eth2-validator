@@ -161,7 +161,7 @@ func (s *State) SlashBlockCheck(valID uint64, slot uint64, root []byte) error {
 	proposalAtSlotFn := func() (*blockSlotProposal, error) {
 		result := &blockSlotProposal{}
 
-		obj, err := txn.First(dutiesTable, "block_proposer", true, valID, slot)
+		obj, err := txn.First(dutiesTable, "block_proposer", valID, slot)
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +174,7 @@ func (s *State) SlashBlockCheck(valID uint64, slot uint64, root []byte) error {
 	lowestSignedProposalFn := func() (*blockSlotProposal, error) {
 		result := &blockSlotProposal{}
 
-		it, err := txn.LowerBound(dutiesTable, "block_proposer", true, valID, slot)
+		it, err := txn.LowerBound(dutiesTable, "block_proposer_prefix", valID)
 		if err != nil {
 			return nil, err
 		}
@@ -203,6 +203,62 @@ func (s *State) SlashBlockCheck(valID uint64, slot uint64, root []byte) error {
 	if lowestProposal.Exists() {
 		if lowestProposal.Slot() >= slot {
 			return fmt.Errorf("could not sign slot with lowest slot number")
+		}
+	}
+	return nil
+}
+
+type attestSlashProposal struct {
+	typ  string
+	duty *proto.Duty
+}
+
+func (a *attestSlashProposal) Epoch() uint64 {
+	if a.typ == "source" {
+		return a.duty.Result.Attestation.Source.Epoch
+	}
+	return a.duty.Result.Attestation.Target.Epoch
+}
+
+func (a *attestSlashProposal) Exists() bool {
+	return a.duty != nil
+}
+
+func (s *State) SlashAttestCheck(valID uint64, source, target uint64) error {
+	txn := s.memdb.Txn(false)
+	defer txn.Abort()
+
+	lowestSignedEpochFn := func(typ string) (*attestSlashProposal, error) {
+		result := &attestSlashProposal{typ: typ}
+
+		it, err := txn.LowerBound(dutiesTable, "attest_proposer_prefix", valID, typ)
+		if err != nil {
+			return nil, err
+		}
+		obj := it.Next()
+		if obj != nil {
+			result.duty = obj.(*proto.Duty)
+		}
+		return result, nil
+	}
+
+	lowestSourceEpoch, err := lowestSignedEpochFn("source")
+	if err != nil {
+		return err
+	}
+	lowestTargetEpoch, err := lowestSignedEpochFn("target")
+	if err != nil {
+		return err
+	}
+
+	if lowestSourceEpoch.Exists() {
+		if source < lowestSourceEpoch.Epoch() {
+			return fmt.Errorf("bad")
+		}
+	}
+	if lowestTargetEpoch.Exists() {
+		if target <= lowestTargetEpoch.Epoch() {
+			return fmt.Errorf("bad2")
 		}
 	}
 	return nil
