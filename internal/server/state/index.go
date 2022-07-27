@@ -43,6 +43,9 @@ func (s *slashingBlockIndex) FromObject(raw interface{}) (bool, []byte, error) {
 	if duty.Type() != proto.DutyBlockProposal {
 		return false, nil, nil
 	}
+	if duty.Result == nil {
+		return false, nil, nil
+	}
 
 	bb := &bytesWritter{}
 	bb.uint64(duty.ValidatorIndex)
@@ -95,6 +98,9 @@ func (s *slashingAttestIndex) FromObject(raw interface{}) (bool, [][]byte, error
 		return false, nil, fmt.Errorf("obj is not duty")
 	}
 	if duty.Type() != proto.DutyAttestation {
+		return false, nil, nil
+	}
+	if duty.Result == nil {
 		return false, nil, nil
 	}
 
