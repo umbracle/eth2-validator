@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/armon/go-metrics"
 	"github.com/umbracle/eth2-validator/internal/delayheap"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 )
@@ -15,6 +16,8 @@ type EvalQueue struct {
 	delayHeap     *delayheap.DelayHeap
 	delayUpdateCh chan struct{}
 	closeCh       chan struct{}
+
+	stats *EvalStats
 
 	// unack is the list of not aknowledge duties
 	unack map[string]*proto.Duty
@@ -42,6 +45,7 @@ type blockedDuty struct {
 func NewEvalQueue() *EvalQueue {
 	e := &EvalQueue{
 		delayHeap:         delayheap.NewDelayHeap(),
+		stats:             new(EvalStats),
 		unack:             map[string]*proto.Duty{},
 		delayUpdateCh:     make(chan struct{}),
 		closeCh:           make(chan struct{}),
@@ -91,9 +95,11 @@ func (p *EvalQueue) Enqueue(ctx context.Context, duties []*proto.Duty) {
 				}
 				p.reverseBlockedMap[dep] = append(p.reverseBlockedMap[dep], duty.Id)
 			}
+			p.stats.TotalBlocked += len(duty.BlockedBy)
 		} else {
 			// not blocked, push right away to the heap
 			p.delayHeap.Push(&dutyWrapper{duty}, duty.ActiveTime.AsTime())
+			p.stats.TotalWaiting += 1
 		}
 		// add entry in the context map
 		p.ctxMap[duty.Id] = ctx
@@ -120,6 +126,9 @@ START:
 			return nil, nil, fmt.Errorf("context not found for task: %s", duty.Id)
 		}
 
+		p.stats.TotalUnacked += 1
+		p.stats.TotalReady -= 1
+
 		p.l.Unlock()
 		return duty, ctx, nil
 	}
@@ -144,6 +153,7 @@ func (p *EvalQueue) Ack(dutyID string) error {
 	}
 	delete(p.unack, dutyID)
 	delete(p.ctxMap, dutyID)
+	p.stats.TotalUnacked -= 1
 
 	// unblock pending tasks
 	blockedDuties, ok := p.reverseBlockedMap[dutyID]
@@ -161,6 +171,9 @@ func (p *EvalQueue) Ack(dutyID string) error {
 			if len(found.Blocked) == 0 {
 				delete(p.blocked, duty)
 
+				p.stats.TotalBlocked -= 1
+				p.stats.TotalWaiting += 1
+
 				// enqueue the task in the delay heap
 				p.delayHeap.Push(&dutyWrapper{found.Duty}, found.Duty.ActiveTime.AsTime())
 				select {
@@ -174,6 +187,7 @@ func (p *EvalQueue) Ack(dutyID string) error {
 }
 
 func (p *EvalQueue) enqueueLocked(duty *proto.Duty) {
+	p.stats.TotalReady += 1
 	p.ready = append(p.ready, duty)
 
 	select {
@@ -225,6 +239,7 @@ func (p *EvalQueue) runDelayHeap() {
 			// remove from the heap since we can enqueue it now
 			p.l.Lock()
 			p.delayHeap.Remove(&dutyWrapper{duty})
+			p.stats.TotalWaiting -= 1
 			p.enqueueLocked(duty)
 			p.l.Unlock()
 
@@ -232,4 +247,59 @@ func (p *EvalQueue) runDelayHeap() {
 			continue
 		}
 	}
+}
+
+func (p *EvalQueue) EmitStats(period time.Duration, stopCh <-chan struct{}) {
+	timer := time.NewTimer(period)
+
+	for {
+		timer.Reset(period)
+
+		select {
+		case <-timer.C:
+			stats := p.Stats()
+			metrics.SetGauge([]string{"eth2-validator", "eval_queue", "total_ready"}, float32(stats.TotalReady))
+			metrics.SetGauge([]string{"eth2-validator", "eval_queue", "total_unacked"}, float32(stats.TotalUnacked))
+			metrics.SetGauge([]string{"eth2-validator", "eval_queue", "total_blocked"}, float32(stats.TotalBlocked))
+			metrics.SetGauge([]string{"eth2-validator", "eval_queue", "total_waiting"}, float32(stats.TotalWaiting))
+
+			for _, duty := range stats.DelayedEvals {
+				metrics.SetGaugeWithLabels([]string{"eth2-validator", "eval_queue", "eval_waiting"},
+					float32(time.Until(duty.ActiveTime.AsTime()).Seconds()),
+					[]metrics.Label{
+						{Name: "eval_id", Value: duty.Id},
+					})
+			}
+
+		case <-stopCh:
+			return
+		}
+	}
+}
+
+func (b *EvalQueue) Stats() *EvalStats {
+	stats := new(EvalStats)
+	stats.DelayedEvals = make(map[string]*proto.Duty)
+
+	b.l.RLock()
+	defer b.l.RUnlock()
+
+	stats.TotalReady = b.stats.TotalReady
+	stats.TotalUnacked = b.stats.TotalUnacked
+	stats.TotalBlocked = b.stats.TotalBlocked
+	stats.TotalWaiting = b.stats.TotalWaiting
+	for id, eval := range b.stats.DelayedEvals {
+		evalCopy := *eval
+		stats.DelayedEvals[id] = &evalCopy
+	}
+	return stats
+}
+
+// EvalStats returns all the stats about the eval queue
+type EvalStats struct {
+	TotalReady   int
+	TotalUnacked int
+	TotalBlocked int
+	TotalWaiting int
+	DelayedEvals map[string]*proto.Duty
 }

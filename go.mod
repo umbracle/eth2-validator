@@ -3,6 +3,7 @@ module github.com/umbracle/eth2-validator
 go 1.18
 
 require (
+	github.com/armon/go-metrics v0.4.0
 	github.com/boltdb/bolt v1.3.1
 	github.com/ferranbt/fastssz v0.1.1
 	github.com/golang/protobuf v1.5.2
@@ -15,6 +16,7 @@ require (
 	github.com/imdario/mergo v0.3.10
 	github.com/mitchellh/cli v1.1.1
 	github.com/mitchellh/mapstructure v1.3.3
+	github.com/prometheus/client_golang v1.4.0
 	github.com/r3labs/sse/v2 v2.7.4
 	github.com/ryanuber/columnize v2.1.2+incompatible
 	github.com/spf13/pflag v1.0.3
@@ -31,8 +33,10 @@ require (
 
 require (
 	github.com/armon/go-radix v0.0.0-20180808171621-7fddfc383310 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bgentry/speakeasy v0.1.0 // indirect
 	github.com/cenkalti/backoff/v4 v4.1.3 // indirect
+	github.com/cespare/xxhash/v2 v2.1.1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/fatih/color v1.7.0 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
@@ -46,9 +50,13 @@ require (
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.4 // indirect
 	github.com/mattn/go-isatty v0.0.10 // indirect
+	github.com/matttproud/golang_protobuf_extensions v1.0.1 // indirect
 	github.com/minio/sha256-simd v0.1.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/posener/complete v1.1.1 // indirect
+	github.com/prometheus/client_model v0.2.0 // indirect
+	github.com/prometheus/common v0.9.1 // indirect
+	github.com/prometheus/procfs v0.0.8 // indirect
 	github.com/umbracle/fastrlp v0.0.0-20211229195328-c1416904ae17 // indirect
 	github.com/valyala/fastjson v1.4.1 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.7.0 // indirect
