@@ -16,6 +16,7 @@ require (
 	github.com/mitchellh/cli v1.1.1
 	github.com/mitchellh/mapstructure v1.3.3
 	github.com/r3labs/sse/v2 v2.7.4
+	github.com/ryanuber/columnize v2.1.2+incompatible
 	github.com/spf13/pflag v1.0.3
 	github.com/stretchr/testify v1.7.1
 	github.com/supranational/blst v0.3.3

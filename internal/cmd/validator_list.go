@@ -7,24 +7,24 @@ import (
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 )
 
-// DutyListCommand is the command to show the version of the agent
-type DutyListCommand struct {
+// ValidatorsList is the command to show the version of the agent
+type ValidatorsList struct {
 	*Meta
 }
 
 // Help implements the cli.Command interface
-func (c *DutyListCommand) Help() string {
+func (c *ValidatorsList) Help() string {
 	return ""
 }
 
 // Synopsis implements the cli.Command interface
-func (c *DutyListCommand) Synopsis() string {
+func (c *ValidatorsList) Synopsis() string {
 	return ""
 }
 
 // Run implements the cli.Command interface
-func (c *DutyListCommand) Run(args []string) int {
-	flags := c.FlagSet("duty list")
+func (c *ValidatorsList) Run(args []string) int {
+	flags := c.FlagSet("validator list")
 	if err := flags.Parse(args); err != nil {
 		c.UI.Error(err.Error())
 		return 1
@@ -36,29 +36,27 @@ func (c *DutyListCommand) Run(args []string) int {
 		return 1
 	}
 
-	resp, err := conn.ListDuties(context.Background(), &proto.ListDutiesRequest{ValidatorId: -1})
+	resp, err := conn.ValidatorList(context.Background(), &proto.ValidatorListRequest{})
 	if err != nil {
 		c.UI.Error(err.Error())
 		return 1
 	}
-	c.UI.Output(formatDuties(resp.Duties))
+
+	c.UI.Output(formatValidators(resp.Validators))
 	return 0
 }
 
-func formatDuties(duties []*proto.Duty) string {
+func formatValidators(duties []*proto.Validator) string {
 	if len(duties) == 0 {
-		return "No duties found"
+		return "No validators found"
 	}
 
 	rows := make([]string, len(duties)+1)
-	rows[0] = "ID|Validator|Type|Slot|State"
+	rows[0] = "Validator id|Activation epoch"
 	for i, d := range duties {
-		rows[i+1] = fmt.Sprintf("%s|%d|%s|%d|%s",
-			d.Id[:8],
-			d.ValidatorIndex,
-			d.Type(),
-			d.Slot,
-			d.State)
+		rows[i+1] = fmt.Sprintf("%d|%d",
+			d.Index,
+			d.ActivationEpoch)
 	}
 	return formatList(rows)
 }

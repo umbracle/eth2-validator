@@ -7,10 +7,20 @@ import "google/protobuf/timestamp.proto";
 option go_package = "/internal/server/proto";
 
 service ValidatorService {
+    rpc ValidatorList(ValidatorListRequest) returns (ValidatorListResponse);
     rpc ListDuties(ListDutiesRequest) returns (ListDutiesResponse);
 }
 
+message ValidatorListRequest{
+
+}
+
+message ValidatorListResponse{
+    repeated Validator validators = 1;
+}
+
 message ListDutiesRequest {
+    int64 validatorId = 1;
 }
 
 message ListDutiesResponse {

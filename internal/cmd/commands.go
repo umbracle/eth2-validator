@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/mitchellh/cli"
+	"github.com/ryanuber/columnize"
 	"github.com/umbracle/eth2-validator/internal/cmd/server"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"google.golang.org/grpc"
@@ -29,13 +30,18 @@ func Commands() map[string]cli.CommandFactory {
 				UI: ui,
 			}, nil
 		},
-		"validators": func() (cli.Command, error) {
+		"validator": func() (cli.Command, error) {
 			return &Validators{
 				UI: ui,
 			}, nil
 		},
-		"validators list": func() (cli.Command, error) {
+		"validator list": func() (cli.Command, error) {
 			return &ValidatorsList{
+				Meta: meta,
+			}, nil
+		},
+		"validator duties": func() (cli.Command, error) {
+			return &ValidatorDutiesCommand{
 				Meta: meta,
 			}, nil
 		},
@@ -76,4 +82,17 @@ func (m *Meta) Conn() (proto.ValidatorServiceClient, error) {
 	}
 	clt := proto.NewValidatorServiceClient(conn)
 	return clt, nil
+}
+
+func formatList(in []string) string {
+	columnConf := columnize.DefaultConfig()
+	columnConf.Empty = "<none>"
+	return columnize.Format(in, columnConf)
+}
+
+func formatKV(in []string) string {
+	columnConf := columnize.DefaultConfig()
+	columnConf.Empty = "<none>"
+	columnConf.Glue = " = "
+	return columnize.Format(in, columnConf)
 }
