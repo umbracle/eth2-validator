@@ -134,7 +134,7 @@ func (v *Server) runWorker() {
 		v.logger.Info("handle duty", "id", duty.Id, "slot", duty.Slot, "validator", duty.ValidatorIndex, "typ", duty.Type())
 
 		go func(ctx context.Context, duty *proto.Duty) {
-			ctx, span := otel.Tracer("Validator").Start(ctx, duty.Type())
+			ctx, span := otel.Tracer("Validator").Start(ctx, duty.Type().String())
 			defer span.End()
 
 			var res *proto.Duty_Result

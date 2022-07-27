@@ -19,7 +19,11 @@ const (
 	DutySyncCommitteeAggregate = "sync-committee-aggregate"
 )
 
-func (d *Duty) Type() string {
+func (d DutyType) String() string {
+	return string(d)
+}
+
+func (d *Duty) Type() DutyType {
 	switch d.Job.(type) {
 	case *Duty_BlockProposal_:
 		return DutyBlockProposal
