@@ -1,6 +1,9 @@
 package state
 
 import (
+	"bytes"
+	"fmt"
+
 	"github.com/boltdb/bolt"
 	"github.com/hashicorp/go-memdb"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
@@ -133,4 +136,74 @@ func (s *State) ValidatorsList(ws memdb.WatchSet) (memdb.ResultIterator, error) 
 
 	ws.Add(iter.WatchCh())
 	return iter, nil
+}
+
+type blockSlotProposal struct {
+	duty *proto.Duty
+}
+
+func (b *blockSlotProposal) Slot() uint64 {
+	return b.duty.Slot
+}
+
+func (b *blockSlotProposal) Equal(root []byte) bool {
+	return bytes.Equal(b.duty.Result.BlockProposal.Root, root)
+}
+
+func (b *blockSlotProposal) Exists() bool {
+	return b.duty != nil
+}
+
+func (s *State) SlashBlockCheck(valID uint64, slot uint64, root []byte) error {
+	txn := s.memdb.Txn(false)
+	defer txn.Abort()
+
+	proposalAtSlotFn := func() (*blockSlotProposal, error) {
+		result := &blockSlotProposal{}
+
+		obj, err := txn.First(dutiesTable, "block_proposer", true, valID, slot)
+		if err != nil {
+			return nil, err
+		}
+		if obj != nil {
+			result.duty = obj.(*proto.Duty)
+		}
+		return result, nil
+	}
+
+	lowestSignedProposalFn := func() (*blockSlotProposal, error) {
+		result := &blockSlotProposal{}
+
+		it, err := txn.LowerBound(dutiesTable, "block_proposer", true, valID, slot)
+		if err != nil {
+			return nil, err
+		}
+		obj := it.Next()
+		if obj != nil {
+			result.duty = obj.(*proto.Duty)
+		}
+		return result, nil
+	}
+
+	proposalAtSlot, err := proposalAtSlotFn()
+	if err != nil {
+		return err
+	}
+	lowestProposal, err := lowestSignedProposalFn()
+	if err != nil {
+		return err
+	}
+
+	if proposalAtSlot.Exists() {
+		if !proposalAtSlot.Equal(root) {
+			return fmt.Errorf("root at slot %d is repeated", slot)
+		}
+	}
+
+	if lowestProposal.Exists() {
+		if lowestProposal.Slot() >= slot {
+			return fmt.Errorf("could not sign slot with lowest slot number")
+		}
+	}
+	return nil
 }
