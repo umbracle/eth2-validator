@@ -88,6 +88,9 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 		}
 	}
 
+	// emit metrics for the eval queue
+	go v.evalQueue.EmitStats(time.Second, v.shutdownCh)
+
 	return v, nil
 }
 

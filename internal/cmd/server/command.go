@@ -9,6 +9,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/armon/go-metrics"
+	"github.com/armon/go-metrics/prometheus"
 	flag "github.com/spf13/pflag"
 
 	"github.com/google/gops/agent"
@@ -21,6 +23,7 @@ import (
 type Command struct {
 	UI     cli.Ui
 	client *server.Server
+	http   *httpServer
 }
 
 // Help implements the cli.Command interface
@@ -54,10 +57,23 @@ func (c *Command) Run(args []string) int {
 		return 1
 	}
 
+	if err := setupTelemetry(); err != nil {
+		c.UI.Error(err.Error())
+		return 1
+	}
+
 	logger := hclog.New(&hclog.LoggerOptions{
 		Name:  "beacon",
 		Level: hclog.LevelFromString(config.LogLevel),
 	})
+
+	// start http server
+	c.http = &httpServer{
+		addr:   "localhost:4123",
+		logger: logger.Named("http"),
+	}
+	c.http.start()
+
 	client, err := server.NewServer(logger, clientConfig)
 	if err != nil {
 		c.UI.Output(fmt.Sprintf("failed to start validator: %v", err))
@@ -66,6 +82,22 @@ func (c *Command) Run(args []string) int {
 	c.client = client
 
 	return c.handleSignals()
+}
+
+func setupTelemetry() error {
+	inm := metrics.NewInmemSink(10*time.Second, time.Minute)
+	metrics.DefaultInmemSignal(inm)
+
+	promSink, err := prometheus.NewPrometheusSink()
+	if err != nil {
+		return err
+	}
+
+	metricsConf := metrics.DefaultConfig("eth2-validator")
+	metrics.NewGlobal(metricsConf, metrics.FanoutSink{
+		inm, promSink,
+	})
+	return nil
 }
 
 func (c *Command) handleSignals() int {
