@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hashicorp/go-hclog"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/uuid"
 	consensus "github.com/umbracle/go-eth-consensus"
@@ -17,10 +16,10 @@ import (
 
 type State interface {
 	Sign(ctx context.Context, domain proto.DomainType, epoch uint64, account uint64, root [32]byte) ([96]byte, error)
+	DutyByID(dutyID string) (*proto.Duty, error)
 }
 
 type Scheduler struct {
-	logger hclog.Logger
 	ctx    context.Context
 	state  State
 	eval   *proto.Evaluation
@@ -28,9 +27,8 @@ type Scheduler struct {
 	config *consensus.Spec
 }
 
-func NewScheduler(logger hclog.Logger, ctx context.Context, state State, config *consensus.Spec) *Scheduler {
+func NewScheduler(ctx context.Context, state State, config *consensus.Spec) *Scheduler {
 	return &Scheduler{
-		logger: logger,
 		ctx:    ctx,
 		state:  state,
 		config: config,
