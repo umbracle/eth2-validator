@@ -9,15 +9,14 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
-	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"github.com/umbracle/eth2-validator/internal/uuid"
+	consensus "github.com/umbracle/go-eth-consensus"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type State interface {
-	Sign(ctx context.Context, domain proto.DomainType, epoch uint64, account uint64, root []byte) ([]byte, error)
+	Sign(ctx context.Context, domain proto.DomainType, epoch uint64, account uint64, root [32]byte) ([96]byte, error)
 }
 
 type Scheduler struct {
@@ -26,10 +25,10 @@ type Scheduler struct {
 	state  State
 	eval   *proto.Evaluation
 	duties []*proto.Duty
-	config *beacon.ChainConfig
+	config *consensus.Spec
 }
 
-func NewScheduler(logger hclog.Logger, ctx context.Context, state State, config *beacon.ChainConfig) *Scheduler {
+func NewScheduler(logger hclog.Logger, ctx context.Context, state State, config *consensus.Spec) *Scheduler {
 	return &Scheduler{
 		logger: logger,
 		ctx:    ctx,
@@ -99,7 +98,7 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 				ValidatorIndex: uint64(attestation.ValidatorIndex),
 				Job: &proto.Duty_AttestationAggregate_{
 					AttestationAggregate: &proto.Duty_AttestationAggregate{
-						SelectionProof: selectionProof,
+						SelectionProof: selectionProof[:],
 					},
 				},
 				BlockedBy: []string{
@@ -150,7 +149,7 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 						ActiveTime: timestamppb.New(s.atSlot(slot).Add(syncCommitteeAggregationDelay)),
 						Job: &proto.Duty_SyncCommitteeAggregate_{
 							SyncCommitteeAggregate: &proto.Duty_SyncCommitteeAggregate{
-								SelectionProof:    selectionProof,
+								SelectionProof:    selectionProof[:],
 								SubCommitteeIndex: index,
 							},
 						},
@@ -171,7 +170,7 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 	return plan, nil
 }
 
-func (s *Scheduler) isAttestatorAggregate(committeeSize uint64, slot uint64, account uint64) (bool, []byte, error) {
+func (s *Scheduler) isAttestatorAggregate(committeeSize uint64, slot uint64, account uint64) (bool, [96]byte, error) {
 	modulo := committeeSize / s.config.TargetAggregatorsPerCommittee
 	if modulo == 0 {
 		modulo = 1
@@ -181,10 +180,10 @@ func (s *Scheduler) isAttestatorAggregate(committeeSize uint64, slot uint64, acc
 
 	signature, err := s.state.Sign(s.ctx, proto.DomainSelectionProofType, s.eval.Epoch, account, slotRoot)
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to sign attestation aggregate: %v", err)
+		return false, [96]byte{}, fmt.Errorf("failed to sign attestation aggregate: %v", err)
 	}
 
-	hash := sha256.Sum256(signature)
+	hash := sha256.Sum256(signature[:])
 	return binary.LittleEndian.Uint64(hash[:8])%modulo == 0, signature, nil
 }
 
@@ -193,27 +192,27 @@ const (
 	targetAggregattorsPerSyncSubcommittee = 16
 )
 
-func (s *Scheduler) isSyncCommitteeAggregator(subCommitteeIndex uint64, slot uint64, account uint64) (bool, []byte, error) {
+func (s *Scheduler) isSyncCommitteeAggregator(subCommitteeIndex uint64, slot uint64, account uint64) (bool, [96]byte, error) {
 	modulo := s.config.SyncCommitteeSize / syncCommitteeSubnetCount / targetAggregattorsPerSyncSubcommittee
 	if modulo < 1 {
 		modulo = 1
 	}
 
-	signObj := &structs.SyncAggregatorSelectionData{
+	signObj := &consensus.SyncAggregatorSelectionData{
 		Slot:              slot,
 		SubCommitteeIndex: subCommitteeIndex,
 	}
 	root, err := signObj.HashTreeRoot()
 	if err != nil {
-		return false, nil, err
+		return false, [96]byte{}, err
 	}
 
-	signature, err := s.state.Sign(s.ctx, proto.DomainSyncCommitteeSelectionProof, s.eval.Epoch, account, root[:])
+	signature, err := s.state.Sign(s.ctx, proto.DomainSyncCommitteeSelectionProof, s.eval.Epoch, account, root)
 	if err != nil {
-		return false, nil, err
+		return false, [96]byte{}, err
 	}
 
-	hash := sha256.Sum256(signature)
+	hash := sha256.Sum256(signature[:])
 	return binary.LittleEndian.Uint64(hash[:8])%modulo == 0, signature, nil
 }
 
