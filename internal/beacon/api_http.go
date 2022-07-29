@@ -9,6 +9,8 @@ import (
 	"go.opentelemetry.io/otel"
 )
 
+var _ Api = &HttpAPI{}
+
 type HttpAPI struct {
 	client *http.Client
 	url    string

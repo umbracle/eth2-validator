@@ -10,7 +10,6 @@ import (
 	ssz "github.com/ferranbt/fastssz"
 	"github.com/hashicorp/go-hclog"
 	"github.com/umbracle/eth2-validator/internal/beacon"
-	"github.com/umbracle/eth2-validator/internal/bitlist"
 	"github.com/umbracle/eth2-validator/internal/scheduler"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/server/state"
@@ -34,7 +33,7 @@ type Server struct {
 	state        *state.State
 	logger       hclog.Logger
 	shutdownCh   chan struct{}
-	client       *beacon.HttpAPI
+	client       beacon.Api
 	grpcServer   *grpc.Server
 	evalQueue    *EvalQueue
 	beaconConfig *consensus.Spec
@@ -60,8 +59,9 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 		return nil, err
 	}
 
-	v.client = beacon.NewHttpAPI(config.Endpoint)
-	v.client.SetLogger(logger)
+	client := beacon.NewHttpAPI(config.Endpoint)
+	client.SetLogger(logger)
+	v.client = client
 
 	beaconConfig, err := v.client.ConfigSpec()
 	if err != nil {
@@ -142,19 +142,9 @@ func (v *Server) runWorker() {
 			ctx, span := otel.Tracer("Validator").Start(ctx, duty.Type().String())
 			defer span.End()
 
-			var res *proto.Duty_Result
-			switch duty.Job.(type) {
-			case *proto.Duty_BlockProposal_:
-				res, err = v.runBlockProposal(ctx, duty)
-			case *proto.Duty_Attestation_:
-				res, err = v.runSingleAttestation(ctx, duty)
-			case *proto.Duty_AttestationAggregate_:
-				res, err = v.runAttestationAggregate(ctx, duty)
-			case *proto.Duty_SyncCommittee_:
-				res, err = v.runSyncCommittee(ctx, duty)
-			case *proto.Duty_SyncCommitteeAggregate_:
-				res, err = v.runSyncCommitteeAggregate(ctx, duty)
-			}
+			dutyLogic := scheduler.NewDuty(ctx, v.client, v)
+
+			res, err := dutyLogic.Handle(duty)
 			if err != nil {
 				panic(fmt.Errorf("failed to handle %s: %v", duty.Type(), err))
 			}
@@ -170,6 +160,10 @@ func (v *Server) runWorker() {
 	}
 }
 
+func (v *Server) DutyByID(dutyID string) (*proto.Duty, error) {
+	return v.state.DutyByID(dutyID)
+}
+
 func (v *Server) run() {
 	// dutyUpdates := make(chan *dutyUpdates, 8)
 	go v.watchDuties()
@@ -179,210 +173,6 @@ func (v *Server) run() {
 
 	// run the worker
 	go v.runWorker()
-}
-
-func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
-	job := duty.GetSyncCommitteeAggregate()
-
-	latestRoot, err := v.client.GetHeadBlockRoot(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get head block root: %v", err)
-	}
-
-	contribution, err := v.client.SyncCommitteeContribution(ctx, duty.Slot, job.SubCommitteeIndex, latestRoot)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sync committee contribution: %v", err)
-	}
-
-	contributionAggregate := &consensus.ContributionAndProof{
-		AggregatorIndex: duty.ValidatorIndex,
-		Contribution:    contribution,
-		SelectionProof:  consensus.ToBytes96(job.SelectionProof),
-	}
-	root, err := contributionAggregate.HashTreeRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	signature, err := v.Sign(ctx, proto.DomainContributionAndProof, duty.Epoch, duty.ValidatorIndex, root)
-	if err != nil {
-		return nil, err
-	}
-
-	msg := &consensus.SignedContributionAndProof{
-		Message:   contributionAggregate,
-		Signature: signature,
-	}
-	if err := v.client.SubmitSignedContributionAndProof(ctx, []*consensus.SignedContributionAndProof{msg}); err != nil {
-		return nil, fmt.Errorf("failed to submit signed committee aggregate proof: %v", err)
-	}
-
-	result := &proto.Duty_Result{
-		SyncCommitteeAggregate: &proto.Duty_SyncCommitteeAggregateResult{},
-	}
-	return result, nil
-}
-
-func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
-	// get root
-	latestRoot, err := v.client.GetHeadBlockRoot(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get head block root: %v", err)
-	}
-
-	signature, err := v.Sign(ctx, proto.DomainSyncCommitteeType, duty.Epoch, duty.ValidatorIndex, proto.RootSSZ(latestRoot))
-	if err != nil {
-		return nil, err
-	}
-
-	committeeDuty := []*consensus.SyncCommitteeMessage{
-		{
-			Slot:           duty.Slot,
-			BlockRoot:      latestRoot,
-			ValidatorIndex: duty.ValidatorIndex,
-			Signature:      signature,
-		},
-	}
-
-	if err := v.client.SubmitCommitteeDuties(ctx, committeeDuty); err != nil {
-		return nil, fmt.Errorf("failed to submit committee duties: %v", err)
-	}
-
-	// store the attestation in the state
-	result := &proto.Duty_Result{
-		SyncCommittee: &proto.Duty_SyncCommitteeResult{},
-	}
-	return result, nil
-}
-
-func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
-	job := duty.GetAttestation()
-
-	attestationData, err := v.client.RequestAttestationData(ctx, duty.Slot, job.CommitteeIndex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to reuest attestation data: %v", err)
-	}
-	attestationRoot, err := attestationData.HashTreeRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	attestedSignature, err := v.Sign(ctx, proto.DomainBeaconAttesterType, duty.Epoch, duty.ValidatorIndex, attestationRoot)
-	if err != nil {
-		return nil, err
-	}
-
-	bitlist := bitlist.NewBitlist(job.CommitteeLength)
-	bitlist.SetBitAt(job.CommitteeIndex, true)
-
-	attestation := &consensus.Attestation{
-		Data:            attestationData,
-		AggregationBits: bitlist,
-		Signature:       attestedSignature,
-	}
-	if err := v.client.PublishAttestations(ctx, []*consensus.Attestation{attestation}); err != nil {
-		return nil, fmt.Errorf("failed to publish attestations: %v", err)
-	}
-
-	// store the attestation in the state
-	result := &proto.Duty_Result{
-		Attestation: &proto.Duty_AttestationResult{
-			Root: attestationRoot[:],
-			Source: &proto.Duty_AttestationResult_Checkpoint{
-				Root:  attestationData.Source.Root[:],
-				Epoch: attestationData.Source.Epoch,
-			},
-			Target: &proto.Duty_AttestationResult_Checkpoint{
-				Root:  attestationData.Target.Root[:],
-				Epoch: attestationData.Target.Epoch,
-			},
-		},
-	}
-	return result, nil
-}
-
-func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
-	job := duty.GetAttestationAggregate()
-
-	attestation, err := v.state.DutyByID(duty.BlockedBy[0])
-	if err != nil {
-		return nil, err
-	}
-
-	aggregateAttestation, err := v.client.AggregateAttestation(ctx, duty.Slot, consensus.ToBytes32(attestation.Result.Attestation.Root))
-	if err != nil {
-		return nil, fmt.Errorf("failed to aggregate attestation: %v", err)
-	}
-
-	// Sign the aggregate attestation.
-	aggregateAndProof := &consensus.AggregateAndProof{
-		Index:          duty.ValidatorIndex,
-		Aggregate:      aggregateAttestation,
-		SelectionProof: consensus.ToBytes96(job.SelectionProof),
-	}
-	aggregateAndProofRoot, err := aggregateAndProof.HashTreeRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	aggregateAndProofRootSignature, err := v.Sign(ctx, proto.DomainAggregateAndProofType, duty.Epoch, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot))
-	if err != nil {
-		return nil, err
-	}
-
-	req := []*consensus.SignedAggregateAndProof{
-		{
-			Message:   aggregateAndProof,
-			Signature: aggregateAndProofRootSignature,
-		},
-	}
-	if err := v.client.PublishAggregateAndProof(ctx, req); err != nil {
-		return nil, fmt.Errorf("failed to publish aggregate and proof: %v", err)
-	}
-
-	result := &proto.Duty_Result{
-		AttestationAggregate: &proto.Duty_AttestationAggregateResult{},
-	}
-	return result, nil
-}
-
-func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
-	// create the randao
-	randaoReveal, err := v.Sign(ctx, proto.DomainRandaomType, duty.Epoch, duty.ValidatorIndex, proto.Uint64SSZ(duty.Epoch))
-	if err != nil {
-		return nil, err
-	}
-
-	block := &consensus.BeaconBlockAltair{}
-	if err := v.client.GetBlock(ctx, block, duty.Slot, randaoReveal); err != nil {
-		return nil, fmt.Errorf("failed to get block: %v", err)
-	}
-
-	blockRoot, err := block.HashTreeRoot()
-	if err != nil {
-		return nil, err
-	}
-
-	blockSignature, err := v.Sign(ctx, proto.DomainBeaconProposerType, duty.Epoch, duty.ValidatorIndex, blockRoot)
-	if err != nil {
-		return nil, err
-	}
-	signedBlock := &consensus.SignedBeaconBlockAltair{
-		Block:     block,
-		Signature: blockSignature,
-	}
-
-	if err := v.client.PublishSignedBlock(ctx, signedBlock); err != nil {
-		return nil, fmt.Errorf("failed to publish block: %v", err)
-	}
-
-	result := &proto.Duty_Result{
-		BlockProposal: &proto.Duty_BlockProposalResult{
-			Root:      block.StateRoot[:],
-			Signature: blockSignature[:],
-		},
-	}
-	return result, nil
 }
 
 func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64, accountIndex uint64, root [32]byte) ([96]byte, error) {
@@ -481,7 +271,7 @@ func (v *Server) handleNewEpoch(epoch uint64) error {
 	schedCtx, span := otel.Tracer("Validator").Start(ctx, "Scheduler")
 	defer span.End()
 
-	sched := scheduler.NewScheduler(v.logger.Named("scheduler"), schedCtx, v, v.beaconConfig)
+	sched := scheduler.NewScheduler(schedCtx, v, v.beaconConfig)
 	plan, err := sched.Process(eval)
 	if err != nil {
 		return err
