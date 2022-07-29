@@ -2,13 +2,8 @@ package beacon
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
-
-	"strings"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/r3labs/sse/v2"
 	consensus "github.com/umbracle/go-eth-consensus"
 	"github.com/umbracle/go-eth-consensus/http"
 	"go.opentelemetry.io/otel"
@@ -36,53 +31,11 @@ func (h *HttpAPI) Genesis(ctx context.Context) (*http.Genesis, error) {
 	return h.client.Beacon().Genesis()
 }
 
-type HeadEvent struct {
-	Slot                      string
-	Block                     string
-	State                     string
-	EpochTransition           bool
-	CurrentDutyDependentRoot  string
-	PreviousDutyDependentRoot string
-}
-
-var eventValidTopics = []string{
-	"head", "block", "attestation", "finalized_checkpoint",
-}
-
-func isValidTopic(str string) bool {
-	for _, topic := range eventValidTopics {
-		if str == topic {
-			return true
-		}
-	}
-	return false
-}
-
 func (h *HttpAPI) Events(ctx context.Context, topics []string, handler func(obj interface{})) error {
-	for _, topic := range topics {
-		if !isValidTopic(topic) {
-			return fmt.Errorf("topic '%s' is not valid", topic)
-		}
-	}
+	_, span := otel.Tracer("Validator").Start(ctx, "Events")
+	defer span.End()
 
-	client := sse.NewClient(h.url + "/eth/v1/events?topics=" + strings.Join(topics, ","))
-	if err := client.SubscribeRawWithContext(ctx, func(msg *sse.Event) {
-		switch string(msg.Event) {
-		case "head":
-			var headEvent *HeadEvent
-			if err := json.Unmarshal(msg.Data, &headEvent); err != nil {
-				h.logger.Error("failed to decode head event", "err", err)
-			} else {
-				handler(err)
-			}
-
-		default:
-			h.logger.Debug("event not tracked", "msg", string(msg.Event))
-		}
-	}); err != nil {
-		return err
-	}
-	return nil
+	return h.client.Events(ctx, topics, handler)
 }
 
 func (h *HttpAPI) GetAttesterDuties(ctx context.Context, epoch uint64, indexes []string) ([]*http.AttesterDuty, error) {
@@ -120,14 +73,14 @@ func (h *HttpAPI) GetValidatorByPubKey(ctx context.Context, pub string) (*http.V
 	return h.client.Beacon().GetValidatorByPubKey(pub)
 }
 
-func (h *HttpAPI) GetBlock(ctx context.Context, slot uint64, randao []byte) (*consensus.BeaconBlock, error) {
+func (h *HttpAPI) GetBlock(ctx context.Context, obj consensus.BeaconBlock, slot uint64, randao [96]byte) error {
 	_, span := otel.Tracer("Validator").Start(ctx, "GetBlock")
 	defer span.End()
 
-	panic("TODO")
+	return h.client.Validator().GetBlock(obj, slot, randao)
 }
 
-func (h *HttpAPI) PublishSignedBlock(ctx context.Context, block *consensus.SignedBeaconBlock) error {
+func (h *HttpAPI) PublishSignedBlock(ctx context.Context, block consensus.SignedBeaconBlock) error {
 	_, span := otel.Tracer("Validator").Start(ctx, "PublishSignedBlock")
 	defer span.End()
 
@@ -148,7 +101,7 @@ func (h *HttpAPI) PublishAttestations(ctx context.Context, data []*consensus.Att
 	return h.client.Beacon().PublishAttestations(data)
 }
 
-func (h *HttpAPI) AggregateAttestation(ctx context.Context, slot uint64, root []byte) (*consensus.Attestation, error) {
+func (h *HttpAPI) AggregateAttestation(ctx context.Context, slot uint64, root [32]byte) (*consensus.Attestation, error) {
 	_, span := otel.Tracer("Validator").Start(ctx, "AggregateAttestation")
 	defer span.End()
 
@@ -173,7 +126,7 @@ func (h *HttpAPI) ConfigSpec() (*consensus.Spec, error) {
 	return h.client.Config().Spec()
 }
 
-func (h *HttpAPI) SyncCommitteeContribution(ctx context.Context, slot uint64, subCommitteeIndex uint64, root []byte) (*consensus.SyncCommitteeContribution, error) {
+func (h *HttpAPI) SyncCommitteeContribution(ctx context.Context, slot uint64, subCommitteeIndex uint64, root [32]byte) (*consensus.SyncCommitteeContribution, error) {
 	_, span := otel.Tracer("Validator").Start(ctx, "SyncCommitteeContribution")
 	defer span.End()
 

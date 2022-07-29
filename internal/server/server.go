@@ -17,6 +17,7 @@ import (
 	"github.com/umbracle/eth2-validator/internal/version"
 	consensus "github.com/umbracle/go-eth-consensus"
 	"github.com/umbracle/go-eth-consensus/bls"
+	"github.com/umbracle/go-eth-consensus/chaintime"
 	"github.com/umbracle/go-eth-consensus/http"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
@@ -188,7 +189,7 @@ func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty
 		return nil, fmt.Errorf("failed to get head block root: %v", err)
 	}
 
-	contribution, err := v.client.SyncCommitteeContribution(ctx, duty.Slot, job.SubCommitteeIndex, latestRoot[:])
+	contribution, err := v.client.SyncCommitteeContribution(ctx, duty.Slot, job.SubCommitteeIndex, latestRoot)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sync committee contribution: %v", err)
 	}
@@ -308,7 +309,7 @@ func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) 
 		return nil, err
 	}
 
-	aggregateAttestation, err := v.client.AggregateAttestation(ctx, duty.Slot, attestation.Result.Attestation.Root)
+	aggregateAttestation, err := v.client.AggregateAttestation(ctx, duty.Slot, consensus.ToBytes32(attestation.Result.Attestation.Root))
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate attestation: %v", err)
 	}
@@ -352,8 +353,8 @@ func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto
 		return nil, err
 	}
 
-	block, err := v.client.GetBlock(ctx, duty.Slot, randaoReveal[:])
-	if err != nil {
+	block := &consensus.BeaconBlockAltair{}
+	if err := v.client.GetBlock(ctx, block, duty.Slot, randaoReveal); err != nil {
 		return nil, fmt.Errorf("failed to get block: %v", err)
 	}
 
@@ -366,7 +367,7 @@ func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto
 	if err != nil {
 		return nil, err
 	}
-	signedBlock := &consensus.SignedBeaconBlock{
+	signedBlock := &consensus.SignedBeaconBlockAltair{
 		Block:     block,
 		Signature: blockSignature,
 	}
@@ -489,32 +490,36 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 }
 
 func (v *Server) watchDuties() {
-	genesis, err := v.client.Genesis(context.Background())
-	if err != nil {
-		panic(err)
+	genesisTime := time.Unix(int64(v.genesis.Time), 0)
+
+	fmt.Println(v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
+
+	cTime := chaintime.New(genesisTime, v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
+	if !cTime.IsActive() {
+		v.logger.Info("genesis not active yet", "time left", time.Until(genesisTime))
+
+		// genesis is not activated yet
+		select {
+		case <-time.After(time.Until(genesisTime)):
+		case <-v.shutdownCh:
+		}
 	}
 
-	genesisTime := time.Unix(int64(genesis.Time), 0)
-
-	bb := newBeaconTracker(v.logger, genesisTime, v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
-	go bb.run()
-
-	// wait for the ready channel to be closed
-	<-bb.readyCh
-
-	v.logger.Info("Start slot", "epoch", bb.startEpoch)
+	epoch := cTime.CurrentEpoch()
+	v.logger.Info("genesis is active", "current epoch", epoch.Number)
 
 	for {
+		// handle the epoch
+		fmt.Println("-- handle epoch", epoch.Number)
+
+		// increase the epoch and wait for it
+		epoch = cTime.Epoch(epoch.Number + 1)
+
+		nextEpoch := epoch.Until()
+		v.logger.Debug("waiting for next epoch", "num", epoch.Number, "time left", nextEpoch)
+
 		select {
-		case res := <-bb.resCh:
-			// check the state of the validators
-
-			go func() {
-				if err := v.handleNewEpoch(genesisTime, res.Epoch); err != nil {
-					v.logger.Error("failed to schedule epoch", "epoch", res.Epoch, "err", err)
-				}
-			}()
-
+		case <-time.After(nextEpoch):
 		case <-v.shutdownCh:
 			return
 		}
