@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 	"time"
 
-	"github.com/umbracle/eth2-validator/internal/beacon"
-	"github.com/umbracle/eth2-validator/internal/bls"
+	"github.com/umbracle/go-eth-consensus/bls"
+	"github.com/umbracle/go-eth-consensus/http"
 )
 
 type DutyType string
@@ -61,9 +61,9 @@ const (
 
 type Evaluation struct {
 	Epoch       uint64
-	Attestation []*beacon.AttesterDuty
-	Proposer    []*beacon.ProposerDuty
-	Committee   []*beacon.CommitteeSyncDuty
+	Attestation []*http.AttesterDuty
+	Proposer    []*http.ProposerDuty
+	Committee   []*http.CommitteeSyncDuty
 	GenesisTime time.Time
 }
 
@@ -71,13 +71,13 @@ type Plan struct {
 	Duties []*Duty
 }
 
-func Uint64SSZ(num uint64) []byte {
-	buf := make([]byte, 32)
-	binary.LittleEndian.PutUint64(buf, num)
+func Uint64SSZ(num uint64) [32]byte {
+	buf := [32]byte{}
+	binary.LittleEndian.PutUint64(buf[:], num)
 	return buf
 }
 
-func RootSSZ(root []byte) []byte {
+func RootSSZ(root [32]byte) [32]byte {
 	return root
 }
 

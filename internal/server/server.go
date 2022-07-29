@@ -11,12 +11,14 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bitlist"
-	"github.com/umbracle/eth2-validator/internal/bls"
 	"github.com/umbracle/eth2-validator/internal/scheduler"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/server/state"
-	"github.com/umbracle/eth2-validator/internal/server/structs"
 	"github.com/umbracle/eth2-validator/internal/version"
+	consensus "github.com/umbracle/go-eth-consensus"
+	"github.com/umbracle/go-eth-consensus/bls"
+	"github.com/umbracle/go-eth-consensus/chaintime"
+	"github.com/umbracle/go-eth-consensus/http"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
@@ -35,8 +37,8 @@ type Server struct {
 	client       *beacon.HttpAPI
 	grpcServer   *grpc.Server
 	evalQueue    *EvalQueue
-	beaconConfig *beacon.ChainConfig
-	genesis      *beacon.Genesis
+	beaconConfig *consensus.Spec
+	genesis      *http.Genesis
 }
 
 // NewServer starts a new validator
@@ -192,26 +194,26 @@ func (v *Server) runSyncCommitteeAggregate(ctx context.Context, duty *proto.Duty
 		return nil, fmt.Errorf("failed to get sync committee contribution: %v", err)
 	}
 
-	contributionAggregate := &structs.ContributionAndProof{
+	contributionAggregate := &consensus.ContributionAndProof{
 		AggregatorIndex: duty.ValidatorIndex,
 		Contribution:    contribution,
-		SelectionProof:  job.SelectionProof,
+		SelectionProof:  consensus.ToBytes96(job.SelectionProof),
 	}
 	root, err := contributionAggregate.HashTreeRoot()
 	if err != nil {
 		return nil, err
 	}
 
-	signature, err := v.Sign(ctx, proto.DomainContributionAndProof, duty.Epoch, duty.ValidatorIndex, root[:])
+	signature, err := v.Sign(ctx, proto.DomainContributionAndProof, duty.Epoch, duty.ValidatorIndex, root)
 	if err != nil {
 		return nil, err
 	}
 
-	msg := &structs.SignedContributionAndProof{
+	msg := &consensus.SignedContributionAndProof{
 		Message:   contributionAggregate,
 		Signature: signature,
 	}
-	if err := v.client.SubmitSignedContributionAndProof(ctx, []*structs.SignedContributionAndProof{msg}); err != nil {
+	if err := v.client.SubmitSignedContributionAndProof(ctx, []*consensus.SignedContributionAndProof{msg}); err != nil {
 		return nil, fmt.Errorf("failed to submit signed committee aggregate proof: %v", err)
 	}
 
@@ -233,7 +235,7 @@ func (v *Server) runSyncCommittee(ctx context.Context, duty *proto.Duty) (*proto
 		return nil, err
 	}
 
-	committeeDuty := []*beacon.SyncCommitteeMessage{
+	committeeDuty := []*consensus.SyncCommitteeMessage{
 		{
 			Slot:           duty.Slot,
 			BlockRoot:      latestRoot,
@@ -265,7 +267,7 @@ func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (*p
 		return nil, err
 	}
 
-	attestedSignature, err := v.Sign(ctx, proto.DomainBeaconAttesterType, duty.Epoch, duty.ValidatorIndex, attestationRoot[:])
+	attestedSignature, err := v.Sign(ctx, proto.DomainBeaconAttesterType, duty.Epoch, duty.ValidatorIndex, attestationRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -273,12 +275,12 @@ func (v *Server) runSingleAttestation(ctx context.Context, duty *proto.Duty) (*p
 	bitlist := bitlist.NewBitlist(job.CommitteeLength)
 	bitlist.SetBitAt(job.CommitteeIndex, true)
 
-	attestation := &structs.Attestation{
+	attestation := &consensus.Attestation{
 		Data:            attestationData,
 		AggregationBits: bitlist,
 		Signature:       attestedSignature,
 	}
-	if err := v.client.PublishAttestations(ctx, []*structs.Attestation{attestation}); err != nil {
+	if err := v.client.PublishAttestations(ctx, []*consensus.Attestation{attestation}); err != nil {
 		return nil, fmt.Errorf("failed to publish attestations: %v", err)
 	}
 
@@ -307,28 +309,28 @@ func (v *Server) runAttestationAggregate(ctx context.Context, duty *proto.Duty) 
 		return nil, err
 	}
 
-	aggregateAttestation, err := v.client.AggregateAttestation(ctx, duty.Slot, attestation.Result.Attestation.Root)
+	aggregateAttestation, err := v.client.AggregateAttestation(ctx, duty.Slot, consensus.ToBytes32(attestation.Result.Attestation.Root))
 	if err != nil {
 		return nil, fmt.Errorf("failed to aggregate attestation: %v", err)
 	}
 
 	// Sign the aggregate attestation.
-	aggregateAndProof := &structs.AggregateAndProof{
+	aggregateAndProof := &consensus.AggregateAndProof{
 		Index:          duty.ValidatorIndex,
 		Aggregate:      aggregateAttestation,
-		SelectionProof: job.SelectionProof,
+		SelectionProof: consensus.ToBytes96(job.SelectionProof),
 	}
 	aggregateAndProofRoot, err := aggregateAndProof.HashTreeRoot()
 	if err != nil {
 		return nil, err
 	}
 
-	aggregateAndProofRootSignature, err := v.Sign(ctx, proto.DomainAggregateAndProofType, duty.Epoch, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot[:]))
+	aggregateAndProofRootSignature, err := v.Sign(ctx, proto.DomainAggregateAndProofType, duty.Epoch, duty.ValidatorIndex, proto.RootSSZ(aggregateAndProofRoot))
 	if err != nil {
 		return nil, err
 	}
 
-	req := []*beacon.SignedAggregateAndProof{
+	req := []*consensus.SignedAggregateAndProof{
 		{
 			Message:   aggregateAndProof,
 			Signature: aggregateAndProofRootSignature,
@@ -351,8 +353,8 @@ func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto
 		return nil, err
 	}
 
-	block, err := v.client.GetBlock(ctx, duty.Slot, randaoReveal)
-	if err != nil {
+	block := &consensus.BeaconBlockAltair{}
+	if err := v.client.GetBlock(ctx, block, duty.Slot, randaoReveal); err != nil {
 		return nil, fmt.Errorf("failed to get block: %v", err)
 	}
 
@@ -361,11 +363,11 @@ func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto
 		return nil, err
 	}
 
-	blockSignature, err := v.Sign(ctx, proto.DomainBeaconProposerType, duty.Epoch, duty.ValidatorIndex, blockRoot[:])
+	blockSignature, err := v.Sign(ctx, proto.DomainBeaconProposerType, duty.Epoch, duty.ValidatorIndex, blockRoot)
 	if err != nil {
 		return nil, err
 	}
-	signedBlock := &structs.SignedBeaconBlock{
+	signedBlock := &consensus.SignedBeaconBlockAltair{
 		Block:     block,
 		Signature: blockSignature,
 	}
@@ -376,57 +378,57 @@ func (v *Server) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto
 
 	result := &proto.Duty_Result{
 		BlockProposal: &proto.Duty_BlockProposalResult{
-			Root:      block.StateRoot,
-			Signature: blockSignature,
+			Root:      block.StateRoot[:],
+			Signature: blockSignature[:],
 		},
 	}
 	return result, nil
 }
 
-func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64, accountIndex uint64, root []byte) ([]byte, error) {
+func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64, accountIndex uint64, root [32]byte) ([96]byte, error) {
 	_, span := otel.Tracer("Validator").Start(ctx, "Sign")
 	defer span.End()
 
-	var forkVersion []byte
+	var forkVersion [4]byte
 	if v.beaconConfig.BellatrixForkEpoch <= epoch {
-		forkVersion = v.beaconConfig.BellatrixForkVersion[:]
+		forkVersion = v.beaconConfig.BellatrixForkVersion
 	} else if v.beaconConfig.AltairForkEpoch <= epoch {
-		forkVersion = v.beaconConfig.AltairForkVersion[:]
+		forkVersion = v.beaconConfig.AltairForkVersion
 	} else {
-		forkVersion = v.beaconConfig.GenesisForkVersion[:]
+		forkVersion = v.beaconConfig.GenesisForkVersion
 	}
 
-	domainVal := domainTypToDomain(domain, v.beaconConfig)
+	domainVal := domainTypToDomain(domain)
 
-	ddd, err := v.beaconConfig.ComputeDomain(domainVal, forkVersion, v.genesis.Root)
+	ddd, err := consensus.ComputeDomain(domainVal, forkVersion, v.genesis.Root)
 	if err != nil {
-		return nil, err
+		return [96]byte{}, err
 	}
 
-	rootToSign, err := ssz.HashWithDefaultHasher(&structs.SigningData{
+	rootToSign, err := ssz.HashWithDefaultHasher(&consensus.SigningData{
 		ObjectRoot: root,
 		Domain:     ddd,
 	})
 	if err != nil {
-		return nil, err
+		return [96]byte{}, err
 	}
 	validator, err := v.state.GetValidatorByIndex(accountIndex)
 	if err != nil {
-		return nil, err
+		return [96]byte{}, err
 	}
 	key, err := validator.Key()
 	if err != nil {
-		return nil, err
+		return [96]byte{}, err
 	}
 
 	signature, err := key.Sign(rootToSign)
 	if err != nil {
-		return nil, err
+		return [96]byte{}, err
 	}
 	return signature, nil
 }
 
-func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
+func (v *Server) handleNewEpoch(epoch uint64) error {
 	v.logger.Info("Schedule duties", "epoch", epoch)
 
 	ctx, span := otel.Tracer("Validator").Start(context.Background(), "Epoch")
@@ -454,7 +456,7 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 	if err != nil {
 		return err
 	}
-	proposerDuties := []*beacon.ProposerDuty{}
+	proposerDuties := []*http.ProposerDuty{}
 	for _, duty := range fullProposerDuties {
 		if _, ok := validatorsByIndex[duty.ValidatorIndex]; ok {
 			proposerDuties = append(proposerDuties, duty)
@@ -465,6 +467,8 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 	if err != nil {
 		return err
 	}
+
+	genesisTime := time.Unix(int64(v.genesis.Time), 0)
 
 	eval := &proto.Evaluation{
 		Attestation: attesterDuties,
@@ -488,32 +492,39 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 }
 
 func (v *Server) watchDuties() {
-	genesis, err := v.client.Genesis(context.Background())
-	if err != nil {
-		panic(err)
+	genesisTime := time.Unix(int64(v.genesis.Time), 0)
+
+	cTime := chaintime.New(genesisTime, v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
+	if !cTime.IsActive() {
+		v.logger.Info("genesis not active yet", "time left", time.Until(genesisTime))
+
+		// genesis is not activated yet
+		select {
+		case <-time.After(time.Until(genesisTime)):
+		case <-v.shutdownCh:
+			return
+		}
 	}
 
-	genesisTime := time.Unix(int64(genesis.Time), 0)
-
-	bb := newBeaconTracker(v.logger, genesisTime, v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
-	go bb.run()
-
-	// wait for the ready channel to be closed
-	<-bb.readyCh
-
-	v.logger.Info("Start slot", "epoch", bb.startEpoch)
+	epoch := cTime.CurrentEpoch()
+	v.logger.Info("genesis is active", "current epoch", epoch.Number)
 
 	for {
+		// handle the epoch
+		go func(epoch uint64) {
+			if err := v.handleNewEpoch(epoch); err != nil {
+				v.logger.Error("failed to schedule epoch", "epoch", epoch, "err", err)
+			}
+		}(epoch.Number)
+
+		// increase the epoch and wait for it
+		epoch = cTime.Epoch(epoch.Number + 1)
+
+		nextEpoch := epoch.Until()
+		v.logger.Debug("waiting for next epoch", "num", epoch.Number, "time left", nextEpoch)
+
 		select {
-		case res := <-bb.resCh:
-			// check the state of the validators
-
-			go func() {
-				if err := v.handleNewEpoch(genesisTime, res.Epoch); err != nil {
-					v.logger.Error("failed to schedule epoch", "epoch", res.Epoch, "err", err)
-				}
-			}()
-
+		case <-time.After(nextEpoch):
 		case <-v.shutdownCh:
 			return
 		}
@@ -607,29 +618,28 @@ func (s *Server) setupTelemetry() error {
 	return nil
 }
 
-func domainTypToDomain(typ proto.DomainType, config *beacon.ChainConfig) structs.Domain {
+func domainTypToDomain(typ proto.DomainType) consensus.Domain {
 	switch typ {
 	case proto.DomainBeaconProposerType:
-		return config.DomainBeaconProposer
-	case proto.DomainRandaomType:
-		return config.DomainRandao
+		return consensus.Domain{0, 0, 0, 0}
 	case proto.DomainBeaconAttesterType:
-		return config.DomainBeaconAttester
+		return consensus.Domain{1, 0, 0, 0}
+	case proto.DomainRandaomType:
+		return consensus.Domain{2, 0, 0, 0}
 	case proto.DomainDepositType:
-		return config.DomainDeposit
+		return consensus.Domain{3, 0, 0, 0}
 	case proto.DomainVoluntaryExitType:
-		return config.DomainVoluntaryExit
+		return consensus.Domain{4, 0, 0, 0}
 	case proto.DomainSelectionProofType:
-		return config.DomainSelectionProof
+		return consensus.Domain{5, 0, 0, 0}
 	case proto.DomainAggregateAndProofType:
-		return config.DomainAggregateAndProof
+		return consensus.Domain{6, 0, 0, 0}
 	case proto.DomainSyncCommitteeType:
-		// FIX: lighthouse does not return this constant value
-		return structs.Domain{7, 0, 0, 0}
+		return consensus.Domain{7, 0, 0, 0}
 	case proto.DomainSyncCommitteeSelectionProof:
-		return structs.Domain{8, 0, 0, 0}
+		return consensus.Domain{8, 0, 0, 0}
 	case proto.DomainContributionAndProof:
-		return structs.Domain{9, 0, 0, 0}
+		return consensus.Domain{9, 0, 0, 0}
 	default:
 		panic(fmt.Errorf("domain typ not found: %s", typ))
 	}
