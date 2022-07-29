@@ -428,7 +428,7 @@ func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64
 	return signature, nil
 }
 
-func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
+func (v *Server) handleNewEpoch(epoch uint64) error {
 	v.logger.Info("Schedule duties", "epoch", epoch)
 
 	ctx, span := otel.Tracer("Validator").Start(context.Background(), "Epoch")
@@ -468,6 +468,8 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 		return err
 	}
 
+	genesisTime := time.Unix(int64(v.genesis.Time), 0)
+
 	eval := &proto.Evaluation{
 		Attestation: attesterDuties,
 		Proposer:    proposerDuties,
@@ -492,8 +494,6 @@ func (v *Server) handleNewEpoch(genesisTime time.Time, epoch uint64) error {
 func (v *Server) watchDuties() {
 	genesisTime := time.Unix(int64(v.genesis.Time), 0)
 
-	fmt.Println(v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
-
 	cTime := chaintime.New(genesisTime, v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
 	if !cTime.IsActive() {
 		v.logger.Info("genesis not active yet", "time left", time.Until(genesisTime))
@@ -502,6 +502,7 @@ func (v *Server) watchDuties() {
 		select {
 		case <-time.After(time.Until(genesisTime)):
 		case <-v.shutdownCh:
+			return
 		}
 	}
 
@@ -510,7 +511,11 @@ func (v *Server) watchDuties() {
 
 	for {
 		// handle the epoch
-		fmt.Println("-- handle epoch", epoch.Number)
+		go func(epoch uint64) {
+			if err := v.handleNewEpoch(epoch); err != nil {
+				v.logger.Error("failed to schedule epoch", "epoch", epoch, "err", err)
+			}
+		}(epoch.Number)
 
 		// increase the epoch and wait for it
 		epoch = cTime.Epoch(epoch.Number + 1)
