@@ -3,7 +3,6 @@ package slashing
 import (
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"sort"
 
 	"github.com/umbracle/eth2-validator/internal/server/proto"
@@ -56,12 +55,12 @@ type Input struct {
 func Format(input *Input) ([]byte, error) {
 
 	dutiesByAccount := map[string]*accountDuties{}
-	for indx, duty := range input.Duties {
+	for _, duty := range input.Duties {
 		typ := duty.Type()
 
 		// ensure there are no duties different than block and attestation
 		if typ != proto.DutyBlockProposal && typ != proto.DutyAttestation {
-			return nil, fmt.Errorf("duty '%d' is not of correct type: %s", indx, typ.String())
+			continue
 		}
 
 		var w *accountDuties

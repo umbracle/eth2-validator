@@ -4,6 +4,7 @@ package proto
 
 import (
 	context "context"
+	empty "github.com/golang/protobuf/ptypes/empty"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -20,6 +21,7 @@ const _ = grpc.SupportPackageIsVersion7
 type ValidatorServiceClient interface {
 	ValidatorList(ctx context.Context, in *ValidatorListRequest, opts ...grpc.CallOption) (*ValidatorListResponse, error)
 	ListDuties(ctx context.Context, in *ListDutiesRequest, opts ...grpc.CallOption) (*ListDutiesResponse, error)
+	GetGenesis(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*Genesis, error)
 }
 
 type validatorServiceClient struct {
@@ -48,12 +50,22 @@ func (c *validatorServiceClient) ListDuties(ctx context.Context, in *ListDutiesR
 	return out, nil
 }
 
+func (c *validatorServiceClient) GetGenesis(ctx context.Context, in *empty.Empty, opts ...grpc.CallOption) (*Genesis, error) {
+	out := new(Genesis)
+	err := c.cc.Invoke(ctx, "/proto.ValidatorService/GetGenesis", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ValidatorServiceServer is the server API for ValidatorService service.
 // All implementations must embed UnimplementedValidatorServiceServer
 // for forward compatibility
 type ValidatorServiceServer interface {
 	ValidatorList(context.Context, *ValidatorListRequest) (*ValidatorListResponse, error)
 	ListDuties(context.Context, *ListDutiesRequest) (*ListDutiesResponse, error)
+	GetGenesis(context.Context, *empty.Empty) (*Genesis, error)
 	mustEmbedUnimplementedValidatorServiceServer()
 }
 
@@ -66,6 +78,9 @@ func (UnimplementedValidatorServiceServer) ValidatorList(context.Context, *Valid
 }
 func (UnimplementedValidatorServiceServer) ListDuties(context.Context, *ListDutiesRequest) (*ListDutiesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method ListDuties not implemented")
+}
+func (UnimplementedValidatorServiceServer) GetGenesis(context.Context, *empty.Empty) (*Genesis, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetGenesis not implemented")
 }
 func (UnimplementedValidatorServiceServer) mustEmbedUnimplementedValidatorServiceServer() {}
 
@@ -116,6 +131,24 @@ func _ValidatorService_ListDuties_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ValidatorService_GetGenesis_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(empty.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ValidatorServiceServer).GetGenesis(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/proto.ValidatorService/GetGenesis",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ValidatorServiceServer).GetGenesis(ctx, req.(*empty.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ValidatorService_ServiceDesc is the grpc.ServiceDesc for ValidatorService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -130,6 +163,10 @@ var ValidatorService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListDuties",
 			Handler:    _ValidatorService_ListDuties_Handler,
+		},
+		{
+			MethodName: "GetGenesis",
+			Handler:    _ValidatorService_GetGenesis_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
