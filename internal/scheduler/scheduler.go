@@ -162,6 +162,19 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 	s.duties = duties
 	s.cleanDuties()
 
+	// fill in the fork field in the duty
+	var fork proto.Duty_Fork
+	if s.config.BellatrixForkEpoch <= eval.Epoch {
+		fork = proto.Duty_Bellatrix
+	} else if s.config.AltairForkEpoch <= eval.Epoch {
+		fork = proto.Duty_Altair
+	} else {
+		fork = proto.Duty_Phase0
+	}
+	for _, d := range s.duties {
+		d.Fork = fork
+	}
+
 	plan := &proto.Plan{
 		Duties: s.duties,
 	}

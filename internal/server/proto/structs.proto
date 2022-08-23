@@ -65,6 +65,14 @@ message Duty {
 
     State state = 31;
 
+    Fork fork = 32;
+
+    enum Fork {
+        Phase0 = 0;
+        Altair = 1;
+        Bellatrix = 2;
+    }
+    
     message Result {
         BlockProposalResult blockProposal = 50;
         AttestationResult Attestation = 51;

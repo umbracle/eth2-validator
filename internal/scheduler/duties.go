@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	ssz "github.com/ferranbt/fastssz"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/bitlist"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
@@ -212,6 +213,15 @@ func (d *Duty) runAttestationAggregate(ctx context.Context, duty *proto.Duty) (*
 	return result, nil
 }
 
+type block interface {
+	consensus.BeaconBlock
+	ssz.HashRoot
+}
+
+type signedBlock interface {
+	consensus.SignedBeaconBlock
+}
+
 func (d *Duty) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto.Duty_Result, error) {
 	// create the randao
 	randaoReveal, err := d.Sign(ctx, proto.DomainRandaomType, duty.Epoch, duty.ValidatorIndex, proto.Uint64SSZ(duty.Epoch))
@@ -219,7 +229,14 @@ func (d *Duty) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto.D
 		return nil, err
 	}
 
-	block := &consensus.BeaconBlockAltair{}
+	var block block
+	switch duty.Fork {
+	case proto.Duty_Phase0:
+		block = &consensus.BeaconBlockPhase0{}
+	default:
+		block = &consensus.BeaconBlockAltair{}
+	}
+
 	if err := d.client.GetBlock(ctx, block, duty.Slot, randaoReveal); err != nil {
 		return nil, fmt.Errorf("failed to get block: %v", err)
 	}
@@ -233,9 +250,29 @@ func (d *Duty) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto.D
 	if err != nil {
 		return nil, err
 	}
-	signedBlock := &consensus.SignedBeaconBlockAltair{
-		Block:     block,
-		Signature: blockSignature,
+
+	var signedBlock signedBlock
+	var stateRoot [32]byte
+
+	// TODO: Signing of messages could be simplified with a generic
+	// signing container.
+	switch duty.Fork {
+	case proto.Duty_Phase0:
+		b := block.(*consensus.BeaconBlockPhase0)
+		stateRoot = b.StateRoot
+
+		signedBlock = &consensus.SignedBeaconBlockPhase0{
+			Block:     b,
+			Signature: blockSignature,
+		}
+	default:
+		b := block.(*consensus.BeaconBlockAltair)
+		stateRoot = b.StateRoot
+
+		signedBlock = &consensus.SignedBeaconBlockAltair{
+			Block:     b,
+			Signature: blockSignature,
+		}
 	}
 
 	if err := d.client.PublishSignedBlock(ctx, signedBlock); err != nil {
@@ -244,7 +281,7 @@ func (d *Duty) runBlockProposal(ctx context.Context, duty *proto.Duty) (*proto.D
 
 	result := &proto.Duty_Result{
 		BlockProposal: &proto.Duty_BlockProposalResult{
-			Root:      block.StateRoot[:],
+			Root:      stateRoot[:],
 			Signature: blockSignature[:],
 		},
 	}
