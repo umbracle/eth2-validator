@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/hashicorp/go-memdb"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 )
@@ -11,6 +12,13 @@ type service struct {
 	proto.UnimplementedValidatorServiceServer
 
 	srv *Server
+}
+
+func (s *service) GetGenesis(ctx context.Context, req *empty.Empty) (*proto.Genesis, error) {
+	genesis := &proto.Genesis{
+		Root: s.srv.genesis.Root[:],
+	}
+	return genesis, nil
 }
 
 func (s *service) ListDuties(ctx context.Context, req *proto.ListDutiesRequest) (*proto.ListDutiesResponse, error) {

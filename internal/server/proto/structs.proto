@@ -3,12 +3,18 @@ syntax = "proto3";
 package proto;
 
 import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
 
 option go_package = "/internal/server/proto";
 
 service ValidatorService {
     rpc ValidatorList(ValidatorListRequest) returns (ValidatorListResponse);
     rpc ListDuties(ListDutiesRequest) returns (ListDutiesResponse);
+    rpc GetGenesis(google.protobuf.Empty) returns (Genesis);
+}
+
+message Genesis {
+    bytes root = 1;
 }
 
 message ValidatorListRequest{
