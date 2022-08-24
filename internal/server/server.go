@@ -19,6 +19,7 @@ import (
 	"github.com/umbracle/go-eth-consensus/chaintime"
 	"github.com/umbracle/go-eth-consensus/http"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -221,64 +222,26 @@ func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64
 func (v *Server) handleNewEpoch(epoch uint64) error {
 	v.logger.Info("Schedule duties", "epoch", epoch)
 
-	ctx, span := otel.Tracer("Validator").Start(context.Background(), "Epoch")
+	ctx, span := otel.Tracer("Validator").Start(context.Background(), "Process epoch")
+	span.SetAttributes(attribute.Int64("epoch", int64(epoch)))
 	defer span.End()
 
-	validators, err := v.state.GetValidatorsActiveAt(epoch)
-	if err != nil {
-		return err
-	}
-
-	validatorsByIndex := map[uint]struct{}{}
-	validatorsArray := []string{}
-	for _, val := range validators {
-		validatorsByIndex[uint(val.Index)] = struct{}{}
-		validatorsArray = append(validatorsArray, fmt.Sprintf("%d", val.Index))
-	}
-
-	// query duties for this epoch
-	attesterDuties, err := v.client.GetAttesterDuties(ctx, epoch, validatorsArray)
-	if err != nil {
-		return err
-	}
-
-	fullProposerDuties, err := v.client.GetProposerDuties(ctx, epoch)
-	if err != nil {
-		return err
-	}
-	proposerDuties := []*http.ProposerDuty{}
-	for _, duty := range fullProposerDuties {
-		if _, ok := validatorsByIndex[duty.ValidatorIndex]; ok {
-			proposerDuties = append(proposerDuties, duty)
-		}
-	}
-
-	committeeDuties, err := v.client.GetCommitteeSyncDuties(ctx, epoch, validatorsArray)
-	if err != nil {
-		return err
-	}
-
-	genesisTime := time.Unix(int64(v.genesis.Time), 0)
-
-	eval := &proto.Evaluation{
-		Attestation: attesterDuties,
-		Proposer:    proposerDuties,
-		Committee:   committeeDuties,
-		Epoch:       epoch,
-		GenesisTime: genesisTime,
-	}
-
-	schedCtx, span := otel.Tracer("Validator").Start(ctx, "Scheduler")
-	defer span.End()
-
-	sched := scheduler.NewScheduler(schedCtx, v, v.beaconConfig)
-	plan, err := sched.Process(eval)
+	sched := scheduler.NewScheduler(ctx, v.client, v, v.beaconConfig)
+	plan, err := sched.HandleEpoch(epoch)
 	if err != nil {
 		return err
 	}
 
 	v.evalQueue.Enqueue(ctx, plan.Duties)
 	return nil
+}
+
+func (v *Server) GetValidatorsActiveAt(epoch uint64) ([]*proto.Validator, error) {
+	return v.state.GetValidatorsActiveAt(epoch)
+}
+
+func (v *Server) Genesis() time.Time {
+	return time.Unix(int64(v.genesis.Time), 0)
 }
 
 func (v *Server) watchDuties() {
