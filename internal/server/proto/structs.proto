@@ -129,11 +129,10 @@ message Duty {
 
     enum State {
         UNKNOWN = 0;
-        QUEUED = 1;
-        WAITING = 2;
-        RUNNING = 3;
-        ERROR = 4;
-        SUCCESS = 5;
+        PENDING = 1;
+        COMPLETE = 2;
+        FAILED = 3;
+        CANCELED = 4;
     }
 }
 
