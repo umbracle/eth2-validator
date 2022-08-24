@@ -232,6 +232,7 @@ func (v *Server) handleNewEpoch(epoch uint64) error {
 		return err
 	}
 
+	v.logger.Debug(plan.GoPrint())
 	v.evalQueue.Enqueue(ctx, plan.Duties)
 	return nil
 }

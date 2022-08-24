@@ -3,6 +3,8 @@ package proto
 import (
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/umbracle/go-eth-consensus/bls"
@@ -69,6 +71,21 @@ type Evaluation struct {
 
 type Plan struct {
 	Duties []*Duty
+}
+
+func (p *Plan) GoPrint() string {
+	counts := map[DutyType]uint64{}
+	for _, duty := range p.Duties {
+		counts[duty.Type()]++
+	}
+
+	grp := []string{}
+	for n, count := range counts {
+		grp = append(grp, fmt.Sprintf("(%s: %d)", n, count))
+	}
+
+	str := fmt.Sprintf("Duties: %s", strings.Join(grp, ", "))
+	return str
 }
 
 func Uint64SSZ(num uint64) [32]byte {
