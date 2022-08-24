@@ -8,15 +8,20 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/uuid"
 	consensus "github.com/umbracle/go-eth-consensus"
+	"github.com/umbracle/go-eth-consensus/http"
+	"go.opentelemetry.io/otel"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type State interface {
+	GetValidatorsActiveAt(epoch uint64) ([]*proto.Validator, error)
 	Sign(ctx context.Context, domain proto.DomainType, epoch uint64, account uint64, root [32]byte) ([96]byte, error)
 	DutyByID(dutyID string) (*proto.Duty, error)
+	Genesis() time.Time
 }
 
 type Scheduler struct {
@@ -25,14 +30,64 @@ type Scheduler struct {
 	eval   *proto.Evaluation
 	duties []*proto.Duty
 	config *consensus.Spec
+	client beacon.Api
 }
 
-func NewScheduler(ctx context.Context, state State, config *consensus.Spec) *Scheduler {
+func NewScheduler(ctx context.Context, client beacon.Api, state State, config *consensus.Spec) *Scheduler {
 	return &Scheduler{
 		ctx:    ctx,
 		state:  state,
 		config: config,
+		client: client,
 	}
+}
+
+func (s *Scheduler) HandleEpoch(epoch uint64) (*proto.Plan, error) {
+	ctx, span := otel.Tracer("Validator").Start(s.ctx, "Query duties")
+	defer span.End()
+
+	validators, err := s.state.GetValidatorsActiveAt(epoch)
+	if err != nil {
+		return nil, err
+	}
+
+	validatorsByIndex := map[uint]struct{}{}
+	validatorsArray := []string{}
+	for _, val := range validators {
+		validatorsByIndex[uint(val.Index)] = struct{}{}
+		validatorsArray = append(validatorsArray, fmt.Sprintf("%d", val.Index))
+	}
+
+	// query duties for this epoch
+	attesterDuties, err := s.client.GetAttesterDuties(ctx, epoch, validatorsArray)
+	if err != nil {
+		return nil, err
+	}
+
+	fullProposerDuties, err := s.client.GetProposerDuties(ctx, epoch)
+	if err != nil {
+		return nil, err
+	}
+	proposerDuties := []*http.ProposerDuty{}
+	for _, duty := range fullProposerDuties {
+		if _, ok := validatorsByIndex[duty.ValidatorIndex]; ok {
+			proposerDuties = append(proposerDuties, duty)
+		}
+	}
+
+	committeeDuties, err := s.client.GetCommitteeSyncDuties(ctx, epoch, validatorsArray)
+	if err != nil {
+		return nil, err
+	}
+
+	s.eval = &proto.Evaluation{
+		Attestation: attesterDuties,
+		Proposer:    proposerDuties,
+		Committee:   committeeDuties,
+		Epoch:       epoch,
+		GenesisTime: s.state.Genesis(),
+	}
+	return s.Process(s.eval)
 }
 
 func (s *Scheduler) atSlot(slot uint64) time.Time {
@@ -40,6 +95,9 @@ func (s *Scheduler) atSlot(slot uint64) time.Time {
 }
 
 func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
+	_, span := otel.Tracer("Validator").Start(s.ctx, "Schedule duties")
+	defer span.End()
+
 	s.eval = eval
 
 	slotDuration := time.Duration(s.config.SecondsPerSlot) * time.Second
