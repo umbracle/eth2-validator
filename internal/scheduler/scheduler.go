@@ -231,6 +231,7 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 	}
 	for _, d := range s.duties {
 		d.Fork = fork
+		d.State = proto.Duty_PENDING
 	}
 
 	plan := &proto.Plan{

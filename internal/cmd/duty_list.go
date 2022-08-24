@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 )
@@ -46,6 +47,17 @@ func (c *DutyListCommand) Run(args []string) int {
 }
 
 func formatDuties(duties []*proto.Duty) string {
+	sort.Slice(duties, func(i, j int) bool {
+		d0, d1 := duties[i], duties[j]
+		if d0.PubKey < d1.PubKey {
+			return true
+		}
+		if d0.Slot < d1.Slot {
+			return true
+		}
+		return false
+	})
+
 	if len(duties) == 0 {
 		return "No duties found"
 	}

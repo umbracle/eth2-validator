@@ -37,16 +37,22 @@ func (s *State) Close() error {
 	return s.db.Close()
 }
 
-func (s *State) InsertDuty(duty *proto.Duty) error {
+func (s *State) UpsertDuties(duties []*proto.Duty) error {
 	txn := s.memdb.Txn(true)
 	defer txn.Abort()
 
-	if err := txn.Insert(dutiesTable, duty); err != nil {
-		return err
+	for _, duty := range duties {
+		if err := txn.Insert(dutiesTable, duty); err != nil {
+			return err
+		}
 	}
 
 	txn.Commit()
 	return nil
+}
+
+func (s *State) UpsertDuty(duty *proto.Duty) error {
+	return s.UpsertDuties([]*proto.Duty{duty})
 }
 
 func (s *State) DutyByID(dutyID string) (*proto.Duty, error) {

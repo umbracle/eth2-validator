@@ -152,7 +152,9 @@ func (v *Server) runWorker() {
 
 			// upsert the job on state
 			duty.Result = res
-			if err := v.state.InsertDuty(duty); err != nil {
+			duty.State = proto.Duty_COMPLETE
+
+			if err := v.state.UpsertDuty(duty); err != nil {
 				panic(err)
 			}
 
@@ -233,7 +235,11 @@ func (v *Server) handleNewEpoch(epoch uint64) error {
 	}
 
 	v.logger.Debug(plan.GoPrint())
+
 	v.evalQueue.Enqueue(ctx, plan.Duties)
+	if err := v.state.UpsertDuties(plan.Duties); err != nil {
+		return err
+	}
 	return nil
 }
 

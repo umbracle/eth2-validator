@@ -40,7 +40,7 @@ func TestState_InsertDuty(t *testing.T) {
 			BlockProposal: &proto.Duty_BlockProposal{},
 		},
 	}
-	err := state.InsertDuty(duty1)
+	err := state.UpsertDuty(duty1)
 	assert.NoError(t, err)
 
 	duty2 := &proto.Duty{
@@ -51,7 +51,7 @@ func TestState_InsertDuty(t *testing.T) {
 			},
 		},
 	}
-	err = state.InsertDuty(duty2)
+	err = state.UpsertDuty(duty2)
 	assert.NoError(t, err)
 
 	ws := memdb.NewWatchSet()
@@ -95,7 +95,7 @@ func TestState_SlashBlockCheck(t *testing.T) {
 	state := newTestState(t)
 
 	insertDuty := func(slot uint64, root []byte) {
-		err := state.InsertDuty(&proto.Duty{
+		err := state.UpsertDuty(&proto.Duty{
 			Id:             uuid.Generate(),
 			ValidatorIndex: 1,
 			Slot:           slot,
@@ -129,7 +129,7 @@ func TestState_SlashBlockCheck(t *testing.T) {
 func TestState_SlashAttestCheck(t *testing.T) {
 	state := newTestState(t)
 
-	err := state.InsertDuty(&proto.Duty{
+	err := state.UpsertDuty(&proto.Duty{
 		Id:             uuid.Generate(),
 		ValidatorIndex: 1,
 		Slot:           5,
