@@ -11,7 +11,7 @@ import (
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 )
 
-type EvalQueue struct {
+type DutyQueue struct {
 	l             sync.RWMutex
 	delayHeap     *delayheap.DelayHeap
 	delayUpdateCh chan struct{}
@@ -42,8 +42,8 @@ type blockedDuty struct {
 	Blocked map[string]struct{}
 }
 
-func NewEvalQueue() *EvalQueue {
-	e := &EvalQueue{
+func NewEvalQueue() *DutyQueue {
+	e := &DutyQueue{
 		delayHeap:         delayheap.NewDelayHeap(),
 		stats:             new(EvalStats),
 		unack:             map[string]*proto.Duty{},
@@ -58,7 +58,7 @@ func NewEvalQueue() *EvalQueue {
 	return e
 }
 
-func (p *EvalQueue) Start() {
+func (p *DutyQueue) Start() {
 	go p.runDelayHeap()
 }
 
@@ -70,7 +70,7 @@ func (d *dutyWrapper) ID() string {
 	return d.eval.Id
 }
 
-func (p *EvalQueue) Enqueue(ctx context.Context, duties []*proto.Duty) {
+func (p *DutyQueue) Enqueue(ctx context.Context, duties []*proto.Duty) {
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -111,7 +111,7 @@ func (p *EvalQueue) Enqueue(ctx context.Context, duties []*proto.Duty) {
 	}
 }
 
-func (p *EvalQueue) Dequeue() (*proto.Duty, context.Context, error) {
+func (p *DutyQueue) Dequeue() (*proto.Duty, context.Context, error) {
 START:
 	p.l.Lock()
 	if len(p.ready) != 0 {
@@ -143,7 +143,7 @@ START:
 	}
 }
 
-func (p *EvalQueue) Ack(dutyID string) error {
+func (p *DutyQueue) Ack(dutyID string) error {
 	p.l.Lock()
 	defer p.l.Unlock()
 
@@ -186,7 +186,7 @@ func (p *EvalQueue) Ack(dutyID string) error {
 	return nil
 }
 
-func (p *EvalQueue) enqueueLocked(duty *proto.Duty) {
+func (p *DutyQueue) enqueueLocked(duty *proto.Duty) {
 	p.stats.TotalReady += 1
 	p.ready = append(p.ready, duty)
 
@@ -197,7 +197,7 @@ func (p *EvalQueue) enqueueLocked(duty *proto.Duty) {
 }
 
 // nextDelayedEval returns the next delayed eval to launch and when it should be enqueued.
-func (p *EvalQueue) nextDelayedEval() (*proto.Duty, time.Time) {
+func (p *DutyQueue) nextDelayedEval() (*proto.Duty, time.Time) {
 	p.l.RLock()
 	defer p.l.RUnlock()
 
@@ -213,7 +213,7 @@ func (p *EvalQueue) nextDelayedEval() (*proto.Duty, time.Time) {
 	return eval.(*dutyWrapper).eval, nextEval.WaitUntil
 }
 
-func (p *EvalQueue) runDelayHeap() {
+func (p *DutyQueue) runDelayHeap() {
 	var timerChannel <-chan time.Time
 	var delayTimer *time.Timer
 	for {
@@ -249,7 +249,7 @@ func (p *EvalQueue) runDelayHeap() {
 	}
 }
 
-func (p *EvalQueue) EmitStats(period time.Duration, stopCh <-chan struct{}) {
+func (p *DutyQueue) EmitStats(period time.Duration, stopCh <-chan struct{}) {
 	timer := time.NewTimer(period)
 
 	for {
@@ -277,7 +277,7 @@ func (p *EvalQueue) EmitStats(period time.Duration, stopCh <-chan struct{}) {
 	}
 }
 
-func (b *EvalQueue) Stats() *EvalStats {
+func (b *DutyQueue) Stats() *EvalStats {
 	stats := new(EvalStats)
 	stats.DelayedEvals = make(map[string]*proto.Duty)
 
@@ -289,8 +289,8 @@ func (b *EvalQueue) Stats() *EvalStats {
 	stats.TotalBlocked = b.stats.TotalBlocked
 	stats.TotalWaiting = b.stats.TotalWaiting
 	for id, eval := range b.stats.DelayedEvals {
-		evalCopy := *eval
-		stats.DelayedEvals[id] = &evalCopy
+		evalCopy := eval.Copy()
+		stats.DelayedEvals[id] = evalCopy
 	}
 	return stats
 }

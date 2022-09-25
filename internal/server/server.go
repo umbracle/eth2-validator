@@ -36,7 +36,7 @@ type Server struct {
 	shutdownCh   chan struct{}
 	client       beacon.Api
 	grpcServer   *grpc.Server
-	evalQueue    *EvalQueue
+	evalQueue    *DutyQueue
 	beaconConfig *consensus.Spec
 	genesis      *http.Genesis
 }

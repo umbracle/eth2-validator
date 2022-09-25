@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	proto "github.com/golang/protobuf/proto"
 	"github.com/umbracle/go-eth-consensus/bls"
 	"github.com/umbracle/go-eth-consensus/http"
 )
@@ -108,4 +109,8 @@ func (v *Validator) Key() (*bls.Key, error) {
 		return nil, err
 	}
 	return key, nil
+}
+
+func (d *Duty) Copy() *Duty {
+	return proto.Clone(d).(*Duty)
 }
