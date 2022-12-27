@@ -24,7 +24,7 @@ func TestBitmap_SetIndx(t *testing.T) {
 		require.False(t, b.BitAt(i))
 	}
 
-	// set indexes
+	// set indexes to true
 	for i := uint64(0); i < size; i++ {
 		b.SetBitAt(i, true)
 		require.True(t, b.BitAt(i))
@@ -37,5 +37,15 @@ func TestBitmap_SetIndx(t *testing.T) {
 	// all indexes are full
 	for i := uint64(0); i < size; i++ {
 		require.True(t, b.BitAt(i))
+	}
+
+	// set indexes to false
+	for i := uint64(0); i < size; i++ {
+		b.SetBitAt(i, false)
+		require.False(t, b.BitAt(i))
+
+		for j := uint64(0); j < size; j++ {
+			require.Equal(t, b.BitAt(j), j > i)
+		}
 	}
 }
