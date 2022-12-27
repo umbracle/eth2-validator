@@ -1,6 +1,7 @@
 package bitlist
 
 import (
+	"bytes"
 	"math/bits"
 )
 
@@ -43,6 +44,24 @@ func (b BitList) SetBitAt(indx uint64, val bool) {
 }
 
 // BitAt returns the bit at a given position
-func (b *BitList) BitAt(indx int) bool {
-	return false
+func (b BitList) BitAt(indx uint64) bool {
+	if len := b.Len(); indx >= len {
+		return false
+	}
+
+	bit := uint8(1 << (indx % 8))
+	return b[indx/8]&bit == bit
+}
+
+// Copy copies the bitlist
+func (b BitList) Copy() BitList {
+	bb := make(BitList, len(b))
+	copy(bb[:], b[:])
+
+	return bb
+}
+
+// Equal checks whether two bitlist are equal
+func (b BitList) Equal(bb BitList) bool {
+	return bytes.Equal(b, bb)
 }
