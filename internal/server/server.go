@@ -179,6 +179,9 @@ func (v *Server) run() {
 	// start the queue system
 	v.evalQueue.Start()
 
+	// start the sync committee subscription service
+	go v.syncCommitteeSubscription.Run()
+
 	// run the worker
 	go v.runWorker()
 }
