@@ -92,6 +92,7 @@ message Duty {
     message Attestation {
         uint64 committeeIndex = 1;
         uint64 committeeLength = 2;
+        uint64 committeesAtSlot = 3;
     }
 
     message AttestationResult{

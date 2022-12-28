@@ -87,3 +87,7 @@ func (n *NullAPI) SubmitSignedContributionAndProof(ctx context.Context, signedCo
 func (n *NullAPI) SyncCommitteeSubscriptions(ctx context.Context, subs []*http.SyncCommitteeSubscription) error {
 	panic("unimplemented")
 }
+
+func (n *NullAPI) BeaconCommitteeSubscriptions(ctx context.Context, subs []*http.BeaconCommitteeSubscription) error {
+	panic("unimplemented")
+}

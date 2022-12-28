@@ -28,4 +28,5 @@ type Api interface {
 	SyncCommitteeContribution(ctx context.Context, slot uint64, subCommitteeIndex uint64, root [32]byte) (*consensus.SyncCommitteeContribution, error)
 	SubmitSignedContributionAndProof(ctx context.Context, signedContribution []*consensus.SignedContributionAndProof) error
 	SyncCommitteeSubscriptions(ctx context.Context, subs []*http.SyncCommitteeSubscription) error
+	BeaconCommitteeSubscriptions(ctx context.Context, subs []*http.BeaconCommitteeSubscription) error
 }

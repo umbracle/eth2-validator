@@ -41,6 +41,8 @@ type Server struct {
 	genesis      *http.GenesisInfo
 
 	syncCommitteeSubscription *SyncCommitteeSubscription
+
+	syncBeaconCommitteeSubscription *SyncBeaconCommitteeSubscription
 }
 
 // NewServer starts a new validator
@@ -74,6 +76,9 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 
 	v.syncCommitteeSubscription = NewSyncCommitteeSubscription(state, client)
 	v.syncCommitteeSubscription.SetLogger(logger)
+
+	v.syncBeaconCommitteeSubscription = NewSyncBeaconCommitteeSubscription(state, client)
+	v.syncBeaconCommitteeSubscription.SetLogger(logger)
 
 	genesis, err := v.client.Genesis(context.Background())
 	if err != nil {
@@ -181,6 +186,9 @@ func (v *Server) run() {
 
 	// start the sync committee subscription service
 	go v.syncCommitteeSubscription.Run()
+
+	// start the sync beacon committee subscription service
+	go v.syncBeaconCommitteeSubscription.Run()
 
 	// run the worker
 	go v.runWorker()
