@@ -114,3 +114,29 @@ func (v *Validator) Key() (*bls.Key, error) {
 func (d *Duty) Copy() *Duty {
 	return proto.Clone(d).(*Duty)
 }
+
+func NewDuty() *Duty {
+	return &Duty{}
+}
+
+func (d *Duty) WithEpoch(epoch uint64) *Duty {
+	d.Epoch = epoch
+	return d
+}
+
+func (d *Duty) WithID(id string) *Duty {
+	d.Id = id
+	return d
+}
+
+func (d *Duty) WithValIndex(indx uint64) *Duty {
+	d.ValidatorIndex = indx
+	return d
+}
+
+func (d *Duty) WithSyncCommitteeAggregate(job *Duty_SyncCommitteeAggregate) *Duty {
+	d.Job = &Duty_SyncCommitteeAggregate_{
+		SyncCommitteeAggregate: job,
+	}
+	return d
+}

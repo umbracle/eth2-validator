@@ -29,7 +29,7 @@ func (h *HttpAPI) Syncing() (*http.Syncing, error) {
 	return h.client.Node().Syncing()
 }
 
-func (h *HttpAPI) Genesis(ctx context.Context) (*http.Genesis, error) {
+func (h *HttpAPI) Genesis(ctx context.Context) (*http.GenesisInfo, error) {
 	return h.client.Beacon().Genesis()
 }
 
@@ -72,7 +72,7 @@ func (h *HttpAPI) GetValidatorByPubKey(ctx context.Context, pub string) (*http.V
 	_, span := otel.Tracer("Validator").Start(ctx, "GetValidatorByPubKey")
 	defer span.End()
 
-	return h.client.Beacon().GetValidatorByPubKey(pub)
+	return h.client.Beacon().GetValidatorByPubKey(pub, http.Head)
 }
 
 func (h *HttpAPI) GetBlock(ctx context.Context, obj consensus.BeaconBlock, slot uint64, randao [96]byte) error {
@@ -121,7 +121,7 @@ func (h *HttpAPI) GetHeadBlockRoot(ctx context.Context) ([32]byte, error) {
 	_, span := otel.Tracer("Validator").Start(ctx, "GetHeadBlockRoot")
 	defer span.End()
 
-	return h.client.Beacon().GetHeadBlockRoot()
+	return h.client.Beacon().GetRoot(http.Head)
 }
 
 func (h *HttpAPI) ConfigSpec() (*consensus.Spec, error) {
@@ -140,4 +140,11 @@ func (h *HttpAPI) SubmitSignedContributionAndProof(ctx context.Context, signedCo
 	defer span.End()
 
 	return h.client.Validator().SubmitSignedContributionAndProof(signedContribution)
+}
+
+func (h *HttpAPI) SyncCommitteeSubscriptions(ctx context.Context, subs []*http.SyncCommitteeSubscription) error {
+	_, span := otel.Tracer("Validator").Start(ctx, "SyncCommitteeSubscriptions")
+	defer span.End()
+
+	return h.client.Validator().SyncCommitteeSubscriptions(subs)
 }

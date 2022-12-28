@@ -38,7 +38,9 @@ type Server struct {
 	grpcServer   *grpc.Server
 	evalQueue    *DutyQueue
 	beaconConfig *consensus.Spec
-	genesis      *http.Genesis
+	genesis      *http.GenesisInfo
+
+	syncCommitteeSubscription *SyncCommitteeSubscription
 }
 
 // NewServer starts a new validator
@@ -69,6 +71,9 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 		return nil, err
 	}
 	v.beaconConfig = beaconConfig
+
+	v.syncCommitteeSubscription = NewSyncCommitteeSubscription(state, client)
+	v.syncCommitteeSubscription.SetLogger(logger)
 
 	genesis, err := v.client.Genesis(context.Background())
 	if err != nil {

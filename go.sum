@@ -287,6 +287,8 @@ github.com/umbracle/go-eth-consensus v0.0.0-20220729204016-8e9e1c742aa0 h1:7CAVf
 github.com/umbracle/go-eth-consensus v0.0.0-20220729204016-8e9e1c742aa0/go.mod h1:qEdbWIH3Ud7mRhUlOxNfScXX1JjcqHOqP355Ei14G3s=
 github.com/umbracle/go-eth-consensus v0.1.0 h1:xm/0HCvFxrIHeiVfYoMJ9ZLbMe7IghWA52eWB2Rtfag=
 github.com/umbracle/go-eth-consensus v0.1.0/go.mod h1:qEdbWIH3Ud7mRhUlOxNfScXX1JjcqHOqP355Ei14G3s=
+github.com/umbracle/go-eth-consensus v0.1.1 h1:fAF55GViV+L5fTA/4Sv7f1Q3kfKS2fcsomSCwJB3EOQ=
+github.com/umbracle/go-eth-consensus v0.1.1/go.mod h1:qEdbWIH3Ud7mRhUlOxNfScXX1JjcqHOqP355Ei14G3s=
 github.com/valyala/fastjson v1.4.1 h1:hrltpHpIpkaxll8QltMU8c3QZ5+qIiCL8yKqPFJI/yE=
 github.com/valyala/fastjson v1.4.1/go.mod h1:nV6MsjxL2IMJQUoHDIrjEI7oLyeqK6aBD7EFWPsvP8o=
 github.com/xlab/treeprint v1.0.0/go.mod h1:IoImgRak9i3zJyuxOKUP1v4UZd1tMoKkq/Cimt1uhCg=
