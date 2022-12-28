@@ -10,7 +10,7 @@ import (
 // Api is the api definition required by the validator
 type Api interface {
 	Syncing() (*http.Syncing, error)
-	Genesis(ctx context.Context) (*http.Genesis, error)
+	Genesis(ctx context.Context) (*http.GenesisInfo, error)
 	Events(ctx context.Context, topics []string, handler func(obj interface{})) error
 	GetAttesterDuties(ctx context.Context, epoch uint64, indexes []string) ([]*http.AttesterDuty, error)
 	GetProposerDuties(ctx context.Context, epoch uint64) ([]*http.ProposerDuty, error)
@@ -27,4 +27,5 @@ type Api interface {
 	ConfigSpec() (*consensus.Spec, error)
 	SyncCommitteeContribution(ctx context.Context, slot uint64, subCommitteeIndex uint64, root [32]byte) (*consensus.SyncCommitteeContribution, error)
 	SubmitSignedContributionAndProof(ctx context.Context, signedContribution []*consensus.SignedContributionAndProof) error
+	SyncCommitteeSubscriptions(ctx context.Context, subs []*http.SyncCommitteeSubscription) error
 }

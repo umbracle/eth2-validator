@@ -17,7 +17,7 @@ require (
 	github.com/ryanuber/columnize v2.1.2+incompatible
 	github.com/spf13/pflag v1.0.3
 	github.com/stretchr/testify v1.8.0
-	github.com/umbracle/go-eth-consensus v0.1.0
+	github.com/umbracle/go-eth-consensus v0.1.1
 	go.opentelemetry.io/otel v1.7.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.7.0
 	go.opentelemetry.io/otel/sdk v1.7.0
