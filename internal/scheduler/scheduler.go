@@ -134,8 +134,9 @@ func (s *Scheduler) Process(eval *proto.Evaluation) (*proto.Plan, error) {
 			ValidatorIndex: uint64(attestation.ValidatorIndex),
 			Job: &proto.Duty_Attestation_{
 				Attestation: &proto.Duty_Attestation{
-					CommitteeIndex:  attestation.CommitteeIndex,
-					CommitteeLength: attestation.CommitteeLength,
+					CommitteeIndex:   attestation.CommitteeIndex,
+					CommitteeLength:  attestation.CommitteeLength,
+					CommitteesAtSlot: attestation.CommitteeAtSlot,
 				},
 			},
 		}

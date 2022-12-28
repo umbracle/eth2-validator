@@ -134,6 +134,13 @@ func (d *Duty) WithValIndex(indx uint64) *Duty {
 	return d
 }
 
+func (d *Duty) WithAttestation(job *Duty_Attestation) *Duty {
+	d.Job = &Duty_Attestation_{
+		Attestation: job,
+	}
+	return d
+}
+
 func (d *Duty) WithSyncCommitteeAggregate(job *Duty_SyncCommitteeAggregate) *Duty {
 	d.Job = &Duty_SyncCommitteeAggregate_{
 		SyncCommitteeAggregate: job,

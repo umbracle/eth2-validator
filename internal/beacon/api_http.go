@@ -148,3 +148,10 @@ func (h *HttpAPI) SyncCommitteeSubscriptions(ctx context.Context, subs []*http.S
 
 	return h.client.Validator().SyncCommitteeSubscriptions(subs)
 }
+
+func (h *HttpAPI) BeaconCommitteeSubscriptions(ctx context.Context, subs []*http.BeaconCommitteeSubscription) error {
+	_, span := otel.Tracer("Validator").Start(ctx, "BeaconCommitteeSubscriptions")
+	defer span.End()
+
+	return h.client.Validator().BeaconCommitteeSubscriptions(subs)
+}
