@@ -46,17 +46,25 @@ func (c *ValidatorsList) Run(args []string) int {
 	return 0
 }
 
-func formatValidators(duties []*proto.Validator) string {
-	if len(duties) == 0 {
+func formatValidators(vals []*proto.Validator) string {
+	if len(vals) == 0 {
 		return "No validators found"
 	}
 
-	rows := make([]string, len(duties)+1)
+	// filter only by active validators
+	activeVals := []*proto.Validator{}
+	for _, val := range vals {
+		if val.Metadata != nil {
+			activeVals = append(activeVals, val)
+		}
+	}
+
+	rows := make([]string, len(vals)+1)
 	rows[0] = "Validator id|Activation epoch"
-	for i, d := range duties {
+	for i, d := range activeVals {
 		rows[i+1] = fmt.Sprintf("%d|%d",
-			d.Index,
-			d.ActivationEpoch)
+			d.Metadata.Index,
+			d.Metadata.ActivationEpoch)
 	}
 	return formatList(rows)
 }

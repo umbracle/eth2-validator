@@ -80,8 +80,10 @@ func (s *SyncCommitteeSubscription) Run() {
 			return subs[i].ValidatorIndex < subs[j].ValidatorIndex
 		})
 
-		if err := s.api.SyncCommitteeSubscriptions(context.Background(), subs); err != nil {
-			s.logger.Error("failed to send sync committees subscriptions", "err", err)
+		if len(subs) != 0 {
+			if err := s.api.SyncCommitteeSubscriptions(context.Background(), subs); err != nil {
+				s.logger.Error("failed to send sync committees subscriptions", "err", err)
+			}
 		}
 
 		// wait for the duties to change

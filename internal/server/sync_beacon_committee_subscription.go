@@ -66,8 +66,17 @@ func (s *SyncBeaconCommitteeSubscription) Run() {
 			subs = append(subs, sub)
 		}
 
-		if err := s.api.BeaconCommitteeSubscriptions(context.Background(), subs); err != nil {
-			s.logger.Error("failed to send beacon committe subscriptions", "err", err)
+		if len(subs) != 0 {
+			if err := s.api.BeaconCommitteeSubscriptions(context.Background(), subs); err != nil {
+				s.logger.Error("failed to send beacon committe subscriptions", "err", err)
+			}
+		}
+
+		// wait for the duties to change
+		select {
+		case <-ws.WatchCh(context.Background()):
+		case <-s.closeCh:
+			return
 		}
 	}
 }

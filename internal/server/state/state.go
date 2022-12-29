@@ -82,16 +82,36 @@ func (s *State) DutiesList(ws memdb.WatchSet) (memdb.ResultIterator, error) {
 	return iter, nil
 }
 
-func (s *State) UpsertValidator(validator *proto.Validator) error {
+func (s *State) UpsertValidator(validators ...*proto.Validator) error {
 	txn := s.memdb.Txn(true)
 	defer txn.Abort()
 
-	if err := txn.Insert(validatorsTable, validator); err != nil {
-		return err
+	for _, validator := range validators {
+		if err := txn.Insert(validatorsTable, validator); err != nil {
+			return err
+		}
 	}
 
 	txn.Commit()
 	return nil
+}
+
+func (s *State) GetValidatorsPending(ws memdb.WatchSet) ([]*proto.Validator, error) {
+	txn := s.memdb.Txn(false)
+	defer txn.Abort()
+
+	iter, err := txn.Get(validatorsTable, "pending", false)
+	if err != nil {
+		return nil, err
+	}
+
+	ws.Add(iter.WatchCh())
+
+	result := []*proto.Validator{}
+	for obj := iter.Next(); obj != nil; obj = iter.Next() {
+		result = append(result, obj.(*proto.Validator))
+	}
+	return result, nil
 }
 
 func (s *State) GetValidatorsActiveAt(epoch uint64) ([]*proto.Validator, error) {

@@ -54,8 +54,8 @@ func (s *Scheduler) HandleEpoch(epoch uint64) (*proto.Plan, error) {
 	validatorsByIndex := map[uint]struct{}{}
 	validatorsArray := []string{}
 	for _, val := range validators {
-		validatorsByIndex[uint(val.Index)] = struct{}{}
-		validatorsArray = append(validatorsArray, fmt.Sprintf("%d", val.Index))
+		validatorsByIndex[uint(val.Metadata.Index)] = struct{}{}
+		validatorsArray = append(validatorsArray, fmt.Sprintf("%d", val.Metadata.Index))
 	}
 
 	// query duties for this epoch
