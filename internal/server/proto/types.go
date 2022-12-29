@@ -85,7 +85,14 @@ func (p *Plan) GoPrint() string {
 		grp = append(grp, fmt.Sprintf("(%s: %d)", n, count))
 	}
 
-	str := fmt.Sprintf("Duties: %s", strings.Join(grp, ", "))
+	var res string
+	if len(grp) == 0 {
+		res = "no duties found"
+	} else {
+		res = strings.Join(grp, ", ")
+	}
+
+	str := fmt.Sprintf("Duties: %s", res)
 	return str
 }
 
@@ -146,4 +153,8 @@ func (d *Duty) WithSyncCommitteeAggregate(job *Duty_SyncCommitteeAggregate) *Dut
 		SyncCommitteeAggregate: job,
 	}
 	return d
+}
+
+func (v *Validator) Copy() *Validator {
+	return proto.Clone(v).(*Validator)
 }

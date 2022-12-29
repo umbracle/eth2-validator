@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 
+	"github.com/hashicorp/go-memdb"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 )
 
@@ -30,6 +31,32 @@ func (idx *IndexJob) FromArgs(args ...interface{}) ([]byte, error) {
 
 	typ := args[0].(proto.DutyType)
 	return []byte(typ), nil
+}
+
+type activeValidatorIndex struct {
+	Indexer memdb.Indexer
+}
+
+func (a *activeValidatorIndex) FromObject(raw interface{}) (bool, []byte, error) {
+	val, ok := raw.(*proto.Validator)
+	if !ok {
+		return false, nil, fmt.Errorf("obj is not validator")
+	}
+	if val.Metadata == nil {
+		return false, nil, nil
+	}
+	idx, ok := a.Indexer.(memdb.SingleIndexer)
+	if !ok {
+		return false, nil, fmt.Errorf("sub-index must be a SingleIndexer")
+	}
+	return idx.FromObject(val.Metadata)
+}
+
+func (a *activeValidatorIndex) FromArgs(args ...interface{}) ([]byte, error) {
+	if len(args) == 0 {
+		return nil, fmt.Errorf("no args found")
+	}
+	return a.Indexer.FromArgs(args[0])
 }
 
 type slashingBlockIndex struct {

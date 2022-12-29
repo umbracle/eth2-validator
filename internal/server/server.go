@@ -9,6 +9,7 @@ import (
 
 	ssz "github.com/ferranbt/fastssz"
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-memdb"
 	"github.com/umbracle/eth2-validator/internal/beacon"
 	"github.com/umbracle/eth2-validator/internal/scheduler"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
@@ -86,10 +87,16 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 	}
 	v.genesis = genesis
 
+	initialVals := []*proto.Validator{}
 	for _, privKey := range config.PrivKey {
-		if err := v.addValidator(privKey); err != nil {
-			return nil, fmt.Errorf("failed to start validator %v", err)
+		val, err := validatorFromPrivKey(privKey)
+		if err != nil {
+			return nil, err
 		}
+		initialVals = append(initialVals, val)
+	}
+	if err := v.state.UpsertValidator(initialVals...); err != nil {
+		return nil, err
 	}
 
 	logger.Info("validator started")
@@ -107,37 +114,23 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 	return v, nil
 }
 
-func (v *Server) addValidator(privKey string) error {
+func validatorFromPrivKey(privKey string) (*proto.Validator, error) {
 	buf, err := hex.DecodeString(privKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	key, err := bls.NewKeyFromPriv(buf)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	pubKey := key.PubKey()
-	pubKeyStr := hex.EncodeToString(pubKey[:])
-
-	val, err := v.client.GetValidatorByPubKey(context.Background(), "0x"+pubKeyStr)
-	if err != nil {
-		panic(err)
-	}
-	if val == nil {
-		return fmt.Errorf("only ready available is allowed")
-	}
 
 	validator := &proto.Validator{
-		PrivKey:         privKey,
-		PubKey:          hex.EncodeToString(pubKey[:]),
-		Index:           val.Index,
-		ActivationEpoch: val.Validator.ActivationEpoch,
+		PrivKey: privKey,
+		PubKey:  hex.EncodeToString(pubKey[:]),
 	}
-	if err := v.state.UpsertValidator(validator); err != nil {
-		return err
-	}
-	return nil
+	return validator, nil
 }
 
 func (v *Server) runWorker() {
@@ -178,17 +171,19 @@ func (v *Server) DutyByID(dutyID string) (*proto.Duty, error) {
 }
 
 func (v *Server) run() {
-	// dutyUpdates := make(chan *dutyUpdates, 8)
 	go v.watchDuties()
 
 	// start the queue system
 	v.evalQueue.Start()
 
 	// start the sync committee subscription service
-	go v.syncCommitteeSubscription.Run()
+	//go v.syncCommitteeSubscription.Run()
 
 	// start the sync beacon committee subscription service
-	go v.syncBeaconCommitteeSubscription.Run()
+	//go v.syncBeaconCommitteeSubscription.Run()
+
+	// start the validator lifecycle service to find new validators
+	go v.validatorLifecycle()
 
 	// run the worker
 	go v.runWorker()
@@ -224,6 +219,9 @@ func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64
 	validator, err := v.state.GetValidatorByIndex(accountIndex)
 	if err != nil {
 		return [96]byte{}, err
+	}
+	if validator == nil {
+		return [96]byte{}, fmt.Errorf("validator with index %d not found", accountIndex)
 	}
 	key, err := validator.Key()
 	if err != nil {
@@ -336,6 +334,54 @@ func (s *Server) setupGRPCServer(addr string) error {
 
 	s.logger.Info("GRPC Server started", "addr", addr)
 	return nil
+}
+
+func (s *Server) validatorLifecycle() {
+	genesisTime := time.Unix(int64(s.genesis.Time), 0)
+
+	cTime := chaintime.New(genesisTime, s.beaconConfig.SecondsPerSlot, s.beaconConfig.SlotsPerEpoch)
+	epoch := cTime.CurrentEpoch()
+
+	for {
+		pending, err := s.state.GetValidatorsPending(memdb.NewWatchSet())
+		if err != nil {
+			panic(err)
+		}
+
+		updatedVal := []*proto.Validator{}
+		for _, val := range pending {
+			httpVal, err := s.client.GetValidatorByPubKey(context.Background(), "0x"+val.PubKey)
+			if err != nil {
+				s.logger.Error("failed to query validator", "pubKey", val.PubKey, "err", err)
+			} else {
+				// the validator is active, update it
+				val = val.Copy()
+				val.Metadata = &proto.Validator_Metadata{
+					Index:           httpVal.Index,
+					ActivationEpoch: httpVal.Validator.ActivationEpoch,
+				}
+
+				updatedVal = append(updatedVal, val)
+
+				s.logger.Debug("validator registered", "index", val.Metadata.Index, "epoch", val.Metadata.ActivationEpoch)
+			}
+		}
+
+		if s.state.UpsertValidator(updatedVal...); err != nil {
+			s.logger.Error("failed to upsert validator", "err", err)
+		}
+
+		// increase the epoch and wait for it
+		epoch = cTime.Epoch(epoch.Number + 1)
+
+		nextEpoch := epoch.Until()
+
+		select {
+		case <-time.After(nextEpoch):
+		case <-s.shutdownCh:
+			return
+		}
+	}
 }
 
 func (s *Server) withLoggingUnaryInterceptor() grpc.ServerOption {

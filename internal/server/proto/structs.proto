@@ -138,8 +138,12 @@ message Duty {
 }
 
 message Validator {
-    uint64 index = 1;
-    string pubKey = 2;
-    uint64 activationEpoch = 3;
-    string privKey = 4; // provisional
+    string pubKey = 1;
+    string privKey = 2; // provisional
+    Metadata metadata = 3;
+
+    message Metadata {
+        uint64 index = 1;
+        uint64 activationEpoch = 2;
+    }
 }

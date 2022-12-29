@@ -7,6 +7,7 @@ import (
 
 	"github.com/hashicorp/go-memdb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/uuid"
 )
@@ -68,23 +69,81 @@ func TestState_InsertDuty(t *testing.T) {
 	assert.Equal(t, found.Id, "b")
 }
 
+func TestState_ValidatorsPending(t *testing.T) {
+	state := newTestState(t)
+
+	val := &proto.Validator{
+		PubKey: "a",
+	}
+	require.NoError(t, state.UpsertValidator(val))
+
+	vals, err := state.GetValidatorsPending(memdb.NewWatchSet())
+	require.NoError(t, err)
+	require.Len(t, vals, 1)
+
+	val = val.Copy()
+	val.Metadata = &proto.Validator_Metadata{}
+	require.NoError(t, state.UpsertValidator(val))
+
+	vals, err = state.GetValidatorsPending(memdb.NewWatchSet())
+	require.NoError(t, err)
+	require.Len(t, vals, 0)
+}
+
+func TestState_ValidatorByIndex(t *testing.T) {
+	state := newTestState(t)
+
+	val := &proto.Validator{
+		PubKey: "a",
+	}
+	require.NoError(t, state.UpsertValidator(val))
+
+	res, err := state.GetValidatorByIndex(10)
+	require.Nil(t, err)
+	require.Nil(t, res)
+
+	val.Metadata = &proto.Validator_Metadata{
+		Index: 10,
+	}
+	require.NoError(t, state.UpsertValidator(val))
+
+	res, err = state.GetValidatorByIndex(10)
+	require.Nil(t, err)
+	require.Equal(t, res.Metadata.Index, uint64(10))
+}
+
 func TestState_ValidatorWorkflow(t *testing.T) {
 	state := newTestState(t)
 
+	metadata := []*proto.Validator_Metadata{
+		{Index: 1, ActivationEpoch: 0},
+		{Index: 2, ActivationEpoch: 0},
+		{Index: 3, ActivationEpoch: 2},
+		{Index: 4, ActivationEpoch: 5},
+	}
+
 	validators := []*proto.Validator{
-		{PubKey: "a", Index: 1, ActivationEpoch: 0},
-		{PubKey: "b", Index: 2, ActivationEpoch: 0},
-		{PubKey: "c", Index: 3, ActivationEpoch: 2},
-		{PubKey: "d", Index: 4, ActivationEpoch: 5},
+		{PubKey: "a"},
+		{PubKey: "b"},
+		{PubKey: "c"},
+		{PubKey: "d"},
 	}
-	for _, val := range validators {
-		assert.NoError(t, state.UpsertValidator(val))
-	}
+	assert.NoError(t, state.UpsertValidator(validators...))
 
 	vals, err := state.GetValidatorsActiveAt(0)
 	assert.NoError(t, err)
+	assert.Len(t, vals, 0)
+
+	// activate the validators
+	for indx, val := range validators {
+		val.Metadata = metadata[indx]
+	}
+	assert.NoError(t, state.UpsertValidator(validators...))
+
+	vals, err = state.GetValidatorsActiveAt(0)
+	assert.NoError(t, err)
 	assert.Len(t, vals, 2)
-	assert.Equal(t, vals[0].Index, uint64(1))
+	assert.Equal(t, vals[0].Metadata.Index, uint64(1))
 
 	vals, err = state.GetValidatorsActiveAt(2)
 	assert.NoError(t, err)
