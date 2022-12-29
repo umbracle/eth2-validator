@@ -81,6 +81,8 @@ func (c *Command) Run(args []string) int {
 	}
 	c.client = client
 
+	c.client.Run()
+
 	return c.handleSignals()
 }
 

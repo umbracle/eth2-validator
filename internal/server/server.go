@@ -11,6 +11,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-memdb"
 	"github.com/umbracle/eth2-validator/internal/beacon"
+	"github.com/umbracle/eth2-validator/internal/routine"
 	"github.com/umbracle/eth2-validator/internal/scheduler"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
 	"github.com/umbracle/eth2-validator/internal/server/state"
@@ -40,6 +41,8 @@ type Server struct {
 	evalQueue    *DutyQueue
 	beaconConfig *consensus.Spec
 	genesis      *http.GenesisInfo
+
+	routineManager *routine.Manager
 
 	syncCommitteeSubscription *SyncCommitteeSubscription
 
@@ -81,6 +84,8 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 	v.syncBeaconCommitteeSubscription = NewSyncBeaconCommitteeSubscription(state, client)
 	v.syncBeaconCommitteeSubscription.SetLogger(logger)
 
+	v.routineManager = routine.NewManager(logger)
+
 	genesis, err := v.client.Genesis(context.Background())
 	if err != nil {
 		return nil, err
@@ -99,8 +104,9 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 		return nil, err
 	}
 
-	logger.Info("validator started")
-	go v.run()
+	v.evalQueue.Start()
+
+	v.setupRoutines()
 
 	if config.TelemetryOLTPExporter != "" {
 		if err := v.setupTelemetry(); err != nil {
@@ -133,7 +139,7 @@ func validatorFromPrivKey(privKey string) (*proto.Validator, error) {
 	return validator, nil
 }
 
-func (v *Server) runWorker() {
+func (v *Server) runWorker(ctx context.Context) error {
 	for {
 		duty, ctx, err := v.evalQueue.Dequeue()
 		if err != nil {
@@ -170,11 +176,14 @@ func (v *Server) DutyByID(dutyID string) (*proto.Duty, error) {
 	return v.state.DutyByID(dutyID)
 }
 
-func (v *Server) run() {
-	go v.watchDuties()
+func (v *Server) Run() {
+	v.routineManager.Start(context.Background())
+	v.logger.Info("validator started")
+}
 
-	// start the queue system
-	v.evalQueue.Start()
+func (v *Server) setupRoutines() {
+	// watch for new duties for the validators
+	v.routineManager.Add("watch-duties", v.watchDuties)
 
 	// start the sync committee subscription service
 	//go v.syncCommitteeSubscription.Run()
@@ -183,10 +192,10 @@ func (v *Server) run() {
 	//go v.syncBeaconCommitteeSubscription.Run()
 
 	// start the validator lifecycle service to find new validators
-	go v.validatorLifecycle()
+	v.routineManager.Add("validator-lifecycle", v.validatorLifecycle)
 
-	// run the worker
-	go v.runWorker()
+	// start the worker to process duties
+	v.routineManager.Add("duty-worker", v.runWorker)
 }
 
 func (v *Server) Sign(ctx context.Context, domain proto.DomainType, epoch uint64, accountIndex uint64, root [32]byte) ([96]byte, error) {
@@ -265,7 +274,7 @@ func (v *Server) Genesis() time.Time {
 	return time.Unix(int64(v.genesis.Time), 0)
 }
 
-func (v *Server) watchDuties() {
+func (v *Server) watchDuties(ctx context.Context) error {
 	genesisTime := time.Unix(int64(v.genesis.Time), 0)
 
 	cTime := chaintime.New(genesisTime, v.beaconConfig.SecondsPerSlot, v.beaconConfig.SlotsPerEpoch)
@@ -276,7 +285,7 @@ func (v *Server) watchDuties() {
 		select {
 		case <-time.After(time.Until(genesisTime)):
 		case <-v.shutdownCh:
-			return
+			return nil
 		}
 	}
 
@@ -300,7 +309,7 @@ func (v *Server) watchDuties() {
 		select {
 		case <-time.After(nextEpoch):
 		case <-v.shutdownCh:
-			return
+			return nil
 		}
 	}
 }
@@ -310,6 +319,7 @@ func (v *Server) Stop() {
 	if err := v.state.Close(); err != nil {
 		v.logger.Error("failed to stop state", "err", err)
 	}
+	// TODO: wait for routine manager
 	v.grpcServer.Stop()
 	close(v.shutdownCh)
 }
@@ -336,7 +346,7 @@ func (s *Server) setupGRPCServer(addr string) error {
 	return nil
 }
 
-func (s *Server) validatorLifecycle() {
+func (s *Server) validatorLifecycle(ctx context.Context) error {
 	genesisTime := time.Unix(int64(s.genesis.Time), 0)
 
 	cTime := chaintime.New(genesisTime, s.beaconConfig.SecondsPerSlot, s.beaconConfig.SlotsPerEpoch)
@@ -379,7 +389,7 @@ func (s *Server) validatorLifecycle() {
 		select {
 		case <-time.After(nextEpoch):
 		case <-s.shutdownCh:
-			return
+			return nil
 		}
 	}
 }
