@@ -267,7 +267,7 @@ func (v *Server) handleNewEpoch(epoch uint64) error {
 }
 
 func (v *Server) GetValidatorsActiveAt(epoch uint64) ([]*proto.Validator, error) {
-	return v.state.GetValidatorsActiveAt(epoch)
+	return v.state.GetValidatorsActiveAt(memdb.NewWatchSet(), epoch)
 }
 
 func (v *Server) Genesis() time.Time {

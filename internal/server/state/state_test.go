@@ -1,6 +1,7 @@
 package state
 
 import (
+	"context"
 	"os"
 	"path"
 	"testing"
@@ -112,7 +113,7 @@ func TestState_ValidatorByIndex(t *testing.T) {
 	require.Equal(t, res.Metadata.Index, uint64(10))
 }
 
-func TestState_ValidatorWorkflow(t *testing.T) {
+func TestState_ValidatorsAtEpoch_Activate(t *testing.T) {
 	state := newTestState(t)
 
 	metadata := []*proto.Validator_Metadata{
@@ -130,7 +131,7 @@ func TestState_ValidatorWorkflow(t *testing.T) {
 	}
 	assert.NoError(t, state.UpsertValidator(validators...))
 
-	vals, err := state.GetValidatorsActiveAt(0)
+	vals, err := state.GetValidatorsActiveAt(memdb.NewWatchSet(), 0)
 	assert.NoError(t, err)
 	assert.Len(t, vals, 0)
 
@@ -140,14 +141,56 @@ func TestState_ValidatorWorkflow(t *testing.T) {
 	}
 	assert.NoError(t, state.UpsertValidator(validators...))
 
-	vals, err = state.GetValidatorsActiveAt(0)
+	vals, err = state.GetValidatorsActiveAt(memdb.NewWatchSet(), 0)
 	assert.NoError(t, err)
 	assert.Len(t, vals, 2)
 	assert.Equal(t, vals[0].Metadata.Index, uint64(1))
 
-	vals, err = state.GetValidatorsActiveAt(2)
+	vals, err = state.GetValidatorsActiveAt(memdb.NewWatchSet(), 2)
 	assert.NoError(t, err)
 	assert.Len(t, vals, 3)
+}
+
+func TestState_ValidatorsAtEpoch_Watch(t *testing.T) {
+	state := newTestState(t)
+
+	ws := memdb.NewWatchSet()
+
+	vals, err := state.GetValidatorsActiveAt(ws, 0)
+	require.NoError(t, err)
+	require.Len(t, vals, 0)
+
+	// add two validators, one active, the other not
+	val0 := &proto.Validator{
+		PubKey:   "a",
+		Metadata: &proto.Validator_Metadata{},
+	}
+	val1 := &proto.Validator{
+		PubKey: "b",
+	}
+
+	// we should get an update for 'val0'
+	require.NoError(t, state.UpsertValidator(val0, val1))
+	require.NoError(t, <-ws.WatchCh(context.Background()))
+
+	// query the validators again and find 'val0'
+	ws = memdb.NewWatchSet()
+
+	vals, err = state.GetValidatorsActiveAt(ws, 0)
+	require.NoError(t, err)
+	require.Len(t, vals, 1)
+	require.Equal(t, vals[0].PubKey, "a")
+
+	// activate 'val1' and get the notification
+	val1 = val1.Copy()
+	val1.Metadata = &proto.Validator_Metadata{}
+
+	require.NoError(t, state.UpsertValidator(val0, val1))
+	require.NoError(t, <-ws.WatchCh(context.Background()))
+
+	vals, err = state.GetValidatorsActiveAt(ws, 0)
+	require.NoError(t, err)
+	require.Len(t, vals, 2)
 }
 
 func TestState_SlashBlockCheck(t *testing.T) {

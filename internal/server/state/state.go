@@ -114,7 +114,7 @@ func (s *State) GetValidatorsPending(ws memdb.WatchSet) ([]*proto.Validator, err
 	return result, nil
 }
 
-func (s *State) GetValidatorsActiveAt(epoch uint64) ([]*proto.Validator, error) {
+func (s *State) GetValidatorsActiveAt(ws memdb.WatchSet, epoch uint64) ([]*proto.Validator, error) {
 	txn := s.memdb.Txn(false)
 	defer txn.Abort()
 
@@ -129,6 +129,8 @@ func (s *State) GetValidatorsActiveAt(epoch uint64) ([]*proto.Validator, error) 
 	if err != nil {
 		return nil, err
 	}
+
+	ws.Add(it.WatchCh())
 
 	result := []*proto.Validator{}
 	for obj := it.Next(); obj != nil; obj = it.Next() {
