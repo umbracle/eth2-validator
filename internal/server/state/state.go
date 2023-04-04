@@ -3,10 +3,18 @@ package state
 import (
 	"bytes"
 	"fmt"
+	"reflect"
 
 	"github.com/boltdb/bolt"
 	"github.com/hashicorp/go-memdb"
 	"github.com/umbracle/eth2-validator/internal/server/proto"
+	gproto "google.golang.org/protobuf/proto"
+)
+
+// list of persistent buckets
+var (
+	dutiesBucket     = []byte("duties")
+	validatorsBucket = []byte("validators")
 )
 
 // State is the entity that stores the state of the validator
@@ -16,7 +24,24 @@ type State struct {
 }
 
 func NewState(path string) (*State, error) {
-	db, err := bolt.Open(path, 0600, nil) // TODO
+	db, err := bolt.Open(path, 0600, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	err = db.Update(func(tx *bolt.Tx) error {
+		bkts := [][]byte{
+			dutiesBucket,
+			validatorsBucket,
+		}
+
+		for _, b := range bkts {
+			if _, err := tx.CreateBucketIfNotExists(b); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +55,52 @@ func NewState(path string) (*State, error) {
 		db:    db,
 		memdb: memdb,
 	}
+	if err := state.reIndex(); err != nil {
+		return nil, err
+	}
+
 	return state, nil
+}
+
+func (s *State) reIndex() error {
+	memTxn := s.memdb.Txn(true)
+	defer memTxn.Abort()
+
+	err := s.db.View(func(tx *bolt.Tx) error {
+		// index duties
+		if err := indexObject(tx.Bucket(dutiesBucket), memTxn, "duties", proto.Duty{}); err != nil {
+			return err
+		}
+		// index validators
+		if err := indexObject(tx.Bucket(validatorsBucket), memTxn, "validators", proto.Validator{}); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err == nil {
+		memTxn.Commit()
+	}
+
+	return err
+}
+
+func indexObject(bkt *bolt.Bucket, memTxn *memdb.Txn, table string, obj interface{}) error {
+	err := bkt.ForEach(func(k, v []byte) error {
+		elem := reflect.New(reflect.TypeOf(obj)).Interface().(gproto.Message)
+
+		if err := dbGet(bkt, k, elem); err != nil {
+			return err
+		}
+		if err := memTxn.Insert(table, elem); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *State) Close() error {
@@ -38,17 +108,27 @@ func (s *State) Close() error {
 }
 
 func (s *State) UpsertDuties(duties []*proto.Duty) error {
-	txn := s.memdb.Txn(true)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(true)
+	defer memTxn.Abort()
 
-	for _, duty := range duties {
-		if err := txn.Insert(dutiesTable, duty); err != nil {
-			return err
+	err := s.db.Update(func(dbTxn *bolt.Tx) error {
+		bkt := dbTxn.Bucket(dutiesBucket)
+
+		for _, duty := range duties {
+			if err := memTxn.Insert(dutiesTable, duty); err != nil {
+				return err
+			}
+			if err := dbPut(bkt, []byte(duty.Id), duty); err != nil {
+				return err
+			}
 		}
+		return nil
+	})
+	if err == nil {
+		memTxn.Commit()
 	}
 
-	txn.Commit()
-	return nil
+	return err
 }
 
 func (s *State) UpsertDuty(duty *proto.Duty) error {
@@ -56,10 +136,10 @@ func (s *State) UpsertDuty(duty *proto.Duty) error {
 }
 
 func (s *State) DutyByID(dutyID string) (*proto.Duty, error) {
-	txn := s.memdb.Txn(false)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(false)
+	defer memTxn.Abort()
 
-	duty, err := txn.First(dutiesTable, "id", dutyID)
+	duty, err := memTxn.First(dutiesTable, "id", dutyID)
 	if err != nil {
 		return nil, err
 	}
@@ -70,10 +150,10 @@ func (s *State) DutyByID(dutyID string) (*proto.Duty, error) {
 }
 
 func (s *State) DutiesList(ws memdb.WatchSet) (memdb.ResultIterator, error) {
-	txn := s.memdb.Txn(false)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(false)
+	defer memTxn.Abort()
 
-	iter, err := txn.Get(dutiesTable, "id")
+	iter, err := memTxn.Get(dutiesTable, "id")
 	if err != nil {
 		return nil, err
 	}
@@ -83,24 +163,35 @@ func (s *State) DutiesList(ws memdb.WatchSet) (memdb.ResultIterator, error) {
 }
 
 func (s *State) UpsertValidator(validators ...*proto.Validator) error {
-	txn := s.memdb.Txn(true)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(true)
+	defer memTxn.Abort()
 
-	for _, validator := range validators {
-		if err := txn.Insert(validatorsTable, validator); err != nil {
-			return err
+	err := s.db.Update(func(dbTxn *bolt.Tx) error {
+		bkt := dbTxn.Bucket(validatorsBucket)
+
+		for _, validator := range validators {
+			if err := memTxn.Insert(validatorsTable, validator); err != nil {
+				return err
+			}
+			if err := dbPut(bkt, []byte(validator.PubKey), validator); err != nil {
+				return err
+			}
 		}
+
+		return nil
+	})
+	if err == nil {
+		memTxn.Commit()
 	}
 
-	txn.Commit()
-	return nil
+	return err
 }
 
 func (s *State) GetValidatorsPending(ws memdb.WatchSet) ([]*proto.Validator, error) {
-	txn := s.memdb.Txn(false)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(false)
+	defer memTxn.Abort()
 
-	iter, err := txn.Get(validatorsTable, "pending", false)
+	iter, err := memTxn.Get(validatorsTable, "pending", false)
 	if err != nil {
 		return nil, err
 	}
@@ -115,16 +206,16 @@ func (s *State) GetValidatorsPending(ws memdb.WatchSet) ([]*proto.Validator, err
 }
 
 func (s *State) GetValidatorsActiveAt(epoch uint64) ([]*proto.Validator, error) {
-	txn := s.memdb.Txn(false)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(false)
+	defer memTxn.Abort()
 
 	var it memdb.ResultIterator
 	var err error
 
 	if epoch == 0 {
-		it, err = txn.Get(validatorsTable, "activationEpoch", uint64(0))
+		it, err = memTxn.Get(validatorsTable, "activationEpoch", uint64(0))
 	} else {
-		it, err = txn.ReverseLowerBound(validatorsTable, "activationEpoch", epoch+1)
+		it, err = memTxn.ReverseLowerBound(validatorsTable, "activationEpoch", epoch+1)
 	}
 	if err != nil {
 		return nil, err
@@ -138,10 +229,10 @@ func (s *State) GetValidatorsActiveAt(epoch uint64) ([]*proto.Validator, error) 
 }
 
 func (s *State) GetValidatorByIndex(index uint64) (*proto.Validator, error) {
-	txn := s.memdb.Txn(false)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(false)
+	defer memTxn.Abort()
 
-	validator, err := txn.First(validatorsTable, "index", index)
+	validator, err := memTxn.First(validatorsTable, "index", index)
 	if err != nil {
 		return nil, err
 	}
@@ -152,10 +243,10 @@ func (s *State) GetValidatorByIndex(index uint64) (*proto.Validator, error) {
 }
 
 func (s *State) ValidatorsList(ws memdb.WatchSet) (memdb.ResultIterator, error) {
-	txn := s.memdb.Txn(false)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(false)
+	defer memTxn.Abort()
 
-	iter, err := txn.Get(validatorsTable, "id")
+	iter, err := memTxn.Get(validatorsTable, "id")
 	if err != nil {
 		return nil, err
 	}
@@ -181,13 +272,13 @@ func (b *blockSlotProposal) Exists() bool {
 }
 
 func (s *State) SlashBlockCheck(valID uint64, slot uint64, root []byte) error {
-	txn := s.memdb.Txn(false)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(false)
+	defer memTxn.Abort()
 
 	proposalAtSlotFn := func() (*blockSlotProposal, error) {
 		result := &blockSlotProposal{}
 
-		obj, err := txn.First(dutiesTable, "block_proposer", valID, slot)
+		obj, err := memTxn.First(dutiesTable, "block_proposer", valID, slot)
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +291,7 @@ func (s *State) SlashBlockCheck(valID uint64, slot uint64, root []byte) error {
 	lowestSignedProposalFn := func() (*blockSlotProposal, error) {
 		result := &blockSlotProposal{}
 
-		it, err := txn.LowerBound(dutiesTable, "block_proposer_prefix", valID)
+		it, err := memTxn.LowerBound(dutiesTable, "block_proposer_prefix", valID)
 		if err != nil {
 			return nil, err
 		}
@@ -251,13 +342,13 @@ func (a *attestSlashProposal) Exists() bool {
 }
 
 func (s *State) SlashAttestCheck(valID uint64, source, target uint64) error {
-	txn := s.memdb.Txn(false)
-	defer txn.Abort()
+	memTxn := s.memdb.Txn(false)
+	defer memTxn.Abort()
 
 	lowestSignedEpochFn := func(typ string) (*attestSlashProposal, error) {
 		result := &attestSlashProposal{typ: typ}
 
-		it, err := txn.LowerBound(dutiesTable, "attest_proposer_prefix", valID, typ)
+		it, err := memTxn.LowerBound(dutiesTable, "attest_proposer_prefix", valID, typ)
 		if err != nil {
 			return nil, err
 		}
@@ -286,6 +377,30 @@ func (s *State) SlashAttestCheck(valID uint64, source, target uint64) error {
 		if target <= lowestTargetEpoch.Epoch() {
 			return fmt.Errorf("bad2")
 		}
+	}
+	return nil
+}
+
+func dbPut(b *bolt.Bucket, id []byte, msg gproto.Message) error {
+	enc, err := gproto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	if err := b.Put(id, enc); err != nil {
+		return err
+	}
+	return nil
+}
+
+func dbGet(b *bolt.Bucket, id []byte, msg gproto.Message) error {
+	raw := b.Get(id)
+	if raw == nil {
+		return fmt.Errorf("record not found")
+	}
+
+	if err := gproto.Unmarshal(raw, msg); err != nil {
+		return fmt.Errorf("failed to decode data: %v", err)
 	}
 	return nil
 }

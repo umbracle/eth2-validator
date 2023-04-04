@@ -58,7 +58,7 @@ func NewServer(logger hclog.Logger, config *Config) (*Server, error) {
 		evalQueue:  NewEvalQueue(),
 	}
 
-	state, err := state.NewState("TODO")
+	state, err := state.NewState("eth-validator.db")
 	if err != nil {
 		return nil, fmt.Errorf("failed to start state: %v", err)
 	}
