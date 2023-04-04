@@ -1,7 +1,6 @@
 package state
 
 import (
-	"os"
 	"path"
 	"testing"
 
@@ -13,21 +12,11 @@ import (
 )
 
 func newTestState(t *testing.T) *State {
-	dir, err := os.MkdirTemp("/tmp", "eth2-state-")
-	if err != nil {
-		t.Fatal(err)
-	}
+	dir := t.TempDir()
 
 	state, err := NewState(path.Join(dir, "my.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	t.Cleanup(func() {
-		if err := os.RemoveAll(dir); err != nil {
-			t.Fatal(err)
-		}
-	})
 	return state
 }
 
@@ -67,6 +56,47 @@ func TestState_InsertDuty(t *testing.T) {
 	found, err := state.DutyByID("b")
 	assert.Nil(t, err)
 	assert.Equal(t, found.Id, "b")
+}
+
+func TestState_ReIndex(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := path.Join(dir, "my.db")
+
+	state, err := NewState(dbPath)
+	require.NoError(t, err)
+
+	// insert a duty
+	duty := &proto.Duty{
+		Id:   "a",
+		Slot: 1,
+		Job: &proto.Duty_BlockProposal_{
+			BlockProposal: &proto.Duty_BlockProposal{},
+		},
+	}
+
+	err = state.UpsertDuty(duty)
+	require.NoError(t, err)
+
+	// insert a validator
+	val := &proto.Validator{
+		PubKey: "a",
+	}
+
+	err = state.UpsertValidator(val)
+	require.NoError(t, err)
+
+	state.Close()
+
+	state1, err := NewState(dbPath)
+	require.NoError(t, err)
+
+	duty1, err := state1.DutyByID("a")
+	require.NoError(t, err)
+	require.NotNil(t, duty1)
+
+	val1, err := state1.GetValidatorsPending(memdb.NewWatchSet())
+	require.NoError(t, err)
+	require.Len(t, val1, 1)
 }
 
 func TestState_ValidatorsPending(t *testing.T) {
